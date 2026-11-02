@@ -30,6 +30,62 @@ namespace QuantConnect
     /// </summary>
     public static partial class Messages
     {
+        private static Language _algorithmLanguage = Language.CSharp;
+
+        /// <summary>
+        /// Sets the algorithm language used to format code identifiers in error messages.
+        /// </summary>
+        public static void SetAlgorithmLanguage(Language language)
+        {
+            _algorithmLanguage = language;
+        }
+
+        /// <summary>
+        /// Returns the code identifier formatted for the current algorithm language.
+        /// For Python, converts PascalCase/camelCase to snake_case.
+        /// </summary>
+        private static string FormatCode(string code)
+        {
+            return _algorithmLanguage switch
+            {
+                Language.Python => code.ToSnakeCase(),
+                _ => code
+            };
+        }
+
+        private static string FormatCodeRoot(string code)
+        {
+            return _algorithmLanguage switch
+            {
+                Language.Python => "self." + code.ToSnakeCase(),
+                _ => code
+            };
+        }
+
+        private static string FormatCode<T>(T value) where T : Enum
+        {
+            return FormatCode(value.ToString());
+        }
+
+        private static string AlgorithmPrefix()
+        {
+            return _algorithmLanguage == Language.Python ? "self" : "QCAlgorithm";
+        }
+
+        /// <summary>
+        /// Returns a language-aware, one-line suggestion of the safe access idioms for a keyed collection.
+        /// Appended to key-not-found messages so the failure always carries the guard idiom that prevents it,
+        /// instead of just naming the missing key
+        /// </summary>
+        private static string SafeKeyAccessSuggestion(string collection, string key = "symbol")
+        {
+            return _algorithmLanguage == Language.Python
+                ? $"To prevent the exception, use {collection}.get({key}), which returns None when the {key} is not found, " +
+                    $"or guard the access with 'if {key} in {collection}:'."
+                : $"To prevent the exception, use {collection}.TryGetValue({key}, out var value) or check " +
+                    $"{collection}.ContainsKey({key}) before accessing {collection}[{key}].";
+        }
+
         /// <summary>
         /// Provides user-facing messages for the <see cref="AlphaRuntimeStatistics"/> class and its consumers or related classes
         /// </summary>
@@ -187,8 +243,8 @@ namespace QuantConnect
             public static string TickerNotFoundInSymbolCache(string ticker)
             {
                 return $"The ticker {ticker} was not found in the SymbolCache. Use the Symbol object as key instead. " +
-                    "Accessing the securities collection/slice object by string ticker is only available for securities added with " +
-                    "the AddSecurity-family methods. For more details, please check out the documentation.";
+                    $"Accessing the securities collection/slice object by string ticker is only available for securities added with " +
+                    $"the {FormatCode("AddSecurity")}-family methods. For more details, please check out the documentation.";
             }
 
             /// <summary>
@@ -201,15 +257,25 @@ namespace QuantConnect
             }
 
             /// <summary>
-            /// Returns a string message saying that the given symbol wasn't found in the give instance object. It also shows
-            /// a recommendation for solving this problem
+            /// Returns a string message saying that the given key wasn't found in the given instance object, likely because
+            /// there was no data at that moment in time. It also suggests the safe access idioms that prevent the exception.
+            /// This is the single template for the Slice/DataDictionary-family key-not-found errors
             /// </summary>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static string KeyNotFoundDueToNoData<TKey, TValue>(ExtendedDictionary<TKey, TValue> instance, TKey key)
             {
-                return $"'{key}' wasn't found in the {instance.GetType().Name} object, likely because there was no-data at this moment in " +
-                    "time and it wasn't possible to fillforward historical data. Please check the data exists before accessing it with " +
-                    $"data.ContainsKey(\"{key}\"). The collection is read-only, cannot set default.";
+                return $"'{key}' wasn't found in the {instance.GetType().GetBetterTypeName()} object, likely because there was no-data at this moment " +
+                    $"in time and it wasn't possible to fillforward historical data. {SafeKeyAccessSuggestion("data")}";
+            }
+
+            /// <summary>
+            /// Returns the <see cref="KeyNotFoundDueToNoData{TKey, TValue}"/> message plus a note explaining that
+            /// setdefault could not insert the default because the collection is read-only
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static string SetDefaultKeyNotFoundDueToNoData<TKey, TValue>(ExtendedDictionary<TKey, TValue> instance, TKey key)
+            {
+                return $"{KeyNotFoundDueToNoData(instance, key)} The collection is read-only, cannot set default.";
             }
 
             /// <summary>
@@ -282,7 +348,7 @@ namespace QuantConnect
             public static string ZeroPriceForSecurity(QuantConnect.Symbol symbol)
             {
                 return $"{symbol}: The security does not have an accurate price as it has not yet received a bar of data. " +
-                    "Before placing a trade (or using SetHoldings) warm up your algorithm with SetWarmup, or use slice.Contains(symbol) " +
+                    $"Before placing a trade (or using {FormatCode("SetHoldings")}) warm up your algorithm with {FormatCode("SetWarmup")}, or use slice.{FormatCode("Contains")}(symbol) " +
                     "to confirm the Slice object has price before using the data. Data does not necessarily all arrive at the same " +
                     "time so your algorithm should confirm the data is ready before using it. In live trading this can mean you do " +
                     "not have an active subscription to the asset class you're trying to trade. If using custom data make sure you've " +
@@ -724,7 +790,7 @@ namespace QuantConnect
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static string MarketNotFound(string market)
             {
-                return $@"The specified market wasn't found in the markets lookup. Requested: {market}. You can add markets by calling QuantConnect.Market.Add(string,int)";
+                return $@"The specified market wasn't found in the markets lookup. Requested: {market}. You can add markets by calling QuantConnect.Market.{FormatCode("Add")}(string,int)";
             }
         }
 

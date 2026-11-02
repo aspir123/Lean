@@ -76,7 +76,7 @@ namespace QuantConnect.Securities.Option
         /// <returns>The underlying ticker</returns>
         public static string MapToUnderlying(string optionTicker, SecurityType securityType)
         {
-            if(securityType == SecurityType.FutureOption || securityType == SecurityType.Future)
+            if (securityType == SecurityType.FutureOption || securityType == SecurityType.Future)
             {
                 return FuturesOptionsSymbolMappings.MapFromOption(optionTicker);
             }
@@ -95,6 +95,20 @@ namespace QuantConnect.Securities.Option
         /// <returns></returns>
         public static DateTime GetLastDayOfTrading(Symbol symbol)
         {
+            var exchangeHours = MarketHoursDatabase.FromDataFolder()
+                .GetEntry(symbol.ID.Market, symbol, symbol.SecurityType)
+                .ExchangeHours;
+            return GetLastDayOfTrading(symbol, exchangeHours);
+        }
+
+        /// <summary>
+        /// Returns the last trading date for the option contract, using the given exchange hours instead of looking them up
+        /// </summary>
+        /// <param name="symbol">Option symbol</param>
+        /// <param name="exchangeHours">The exchange hours of the option</param>
+        /// <returns></returns>
+        public static DateTime GetLastDayOfTrading(Symbol symbol, SecurityExchangeHours exchangeHours)
+        {
             // The OCC proposed rule change: starting from 1 Feb 2015 standard monthly contracts
             // expire on 3rd Friday, not Saturday following 3rd Friday as it was before.
             // More details: https://www.sec.gov/rules/sro/occ/2013/34-69480.pdf
@@ -108,10 +122,6 @@ namespace QuantConnect.Securities.Option
             {
                 daysBefore--;
             }
-
-            var exchangeHours = MarketHoursDatabase.FromDataFolder()
-                                              .GetEntry(symbol.ID.Market, symbol, symbol.SecurityType)
-                                              .ExchangeHours;
 
             while (!exchangeHours.IsDateOpen(symbolDateTime.AddDays(daysBefore)))
             {
@@ -133,10 +143,21 @@ namespace QuantConnect.Securities.Option
                 throw new ArgumentException($"The symbol {symbol} is not an option type");
             }
 
-            // Standard index options are AM-settled, which means they settle on market open of the expiration date
-            if (expiryTime.Date == symbol.ID.Date.Date && symbol.SecurityType == SecurityType.IndexOption && IsStandard(symbol))
+            // Standard index options are AM-settled, which means they settle on market open of the expiration date.
+            // Non-standard tickers (e.g. SPXW, RUTW) are always PM-settled, even when expiring on the 3rd Friday.
+            if (expiryTime.Date == symbol.ID.Date.Date
+                && symbol.SecurityType == SecurityType.IndexOption
+                && IsStandard(symbol)
+                && IndexOptionSymbol.IsAMSettled(symbol))
             {
                 expiryTime = exchangeHours.GetNextMarketOpen(expiryTime.Date, false);
+            }
+            // 0DTE PM-settled index options expire at 4:00 PM ET, not the regular 4:15 PM ET (CBOE spec)
+            else if (expiryTime.Date == symbol.ID.Date.Date
+                && symbol.SecurityType == SecurityType.IndexOption
+                && !IndexOptionSymbol.IsAMSettled(symbol))
+            {
+                expiryTime = expiryTime.Date.Add(TimeSpan.FromHours(15));
             }
 
             return expiryTime;

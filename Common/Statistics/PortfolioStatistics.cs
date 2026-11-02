@@ -30,13 +30,13 @@ namespace QuantConnect.Statistics
     public class PortfolioStatistics
     {
         /// <summary>
-        /// The average rate of return for winning trades
+        /// The average rate of return for trades with positive profit loss
         /// </summary>
         [JsonConverter(typeof(JsonRoundingConverter))]
         public decimal AverageWinRate { get; set; }
 
         /// <summary>
-        /// The average rate of return for losing trades
+        /// The average rate of return for trades with zero or negative profit loss
         /// </summary>
         [JsonConverter(typeof(JsonRoundingConverter))]
         public decimal AverageLossRate { get; set; }
@@ -49,14 +49,14 @@ namespace QuantConnect.Statistics
         public decimal ProfitLossRatio { get; set; }
 
         /// <summary>
-        /// The ratio of the number of winning trades to the total number of trades
+        /// The ratio of the number of trades with positive profit loss to the total number of trades
         /// </summary>
         /// <remarks>If the total number of trades is zero, WinRate is set to zero</remarks>
         [JsonConverter(typeof(JsonRoundingConverter))]
         public decimal WinRate { get; set; }
 
         /// <summary>
-        /// The ratio of the number of losing trades to the total number of trades
+        /// The ratio of the number of trades with zero or negative profit loss to the total number of trades
         /// </summary>
         /// <remarks>If the total number of trades is zero, LossRate is set to zero</remarks>
         [JsonConverter(typeof(JsonRoundingConverter))]
@@ -299,7 +299,7 @@ namespace QuantConnect.Statistics
             var benchmarkVariance = listBenchmark.Variance();
             Beta = benchmarkVariance.IsNaNOrZero() ? 0 : (decimal)(listPerformance.Covariance(listBenchmark) / benchmarkVariance);
 
-            Alpha = Beta == 0 ? 0 : annualPerformance - (riskFreeRate + Beta * (benchmarkAnnualPerformance - riskFreeRate));
+            Alpha = Beta == 0 ? 0 : Extensions.SafeDecimalCast((double)annualPerformance - ((double)riskFreeRate + (double)Beta * ((double)benchmarkAnnualPerformance - (double)riskFreeRate)));
 
             TrackingError = (decimal)Statistics.TrackingError(listPerformance, listBenchmark, (double)tradingDaysPerYear);
 
@@ -309,7 +309,7 @@ namespace QuantConnect.Statistics
 
             // deannualize a 1 sharpe ratio
             var benchmarkSharpeRatio = 1.0d / Math.Sqrt(tradingDaysPerYear);
-            ProbabilisticSharpeRatio = Statistics.ProbabilisticSharpeRatio(listPerformance, benchmarkSharpeRatio).SafeDecimalCast();
+            ProbabilisticSharpeRatio = Statistics.ProbabilisticSharpeRatio(listPerformance, benchmarkSharpeRatio, (double)riskFreeRate / tradingDaysPerYear).SafeDecimalCast();
 
             ValueAtRisk99 = GetValueAtRisk(listPerformance, tradingDaysPerYear, 0.99d);
             ValueAtRisk95 = GetValueAtRisk(listPerformance, tradingDaysPerYear, 0.95d);
