@@ -19,7 +19,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading;
 using QuantConnect.Configuration;
 using QuantConnect.Interfaces;
@@ -112,7 +111,6 @@ namespace QuantConnect.Lean.Engine.Storage
         }
 
         private Timer _persistenceTimer;
-        private Regex _pathRegex = new(@"^\.?[a-zA-Z0-9\\/_#\-\$= ]+\.?[a-zA-Z0-9]*$", RegexOptions.Compiled);
         private readonly ConcurrentDictionary<string, ObjectStoreEntry> _storage = new();
         private readonly object _persistLock = new object();
 
@@ -141,15 +139,25 @@ namespace QuantConnect.Lean.Engine.Storage
         /// <param name="algorithmMode">The algorithm mode</param>
         public virtual void Initialize(int userId, int projectId, string userToken, Controls controls, AlgorithmMode algorithmMode)
         {
-            AlgorithmStorageRoot = StorageRoot();
-
-            // create the root path if it does not exist
-            var directoryInfo = FileHandler.CreateDirectory(AlgorithmStorageRoot);
-            // full name will return a normalized path which is later easier to compare
-            AlgorithmStorageRoot = directoryInfo.FullName;
-
             Controls = controls;
             _algorithmMode = algorithmMode;
+
+            AlgorithmStorageRoot = StorageRoot();
+
+            // if the user has no storage access at all there's no point in creating the folder, which might even fail due to missing permissions
+            var storageAccess = Controls.StorageAccess;
+            if (storageAccess == null || storageAccess.Read || storageAccess.Write || storageAccess.Delete)
+            {
+                // create the root path if it does not exist
+                var directoryInfo = FileHandler.CreateDirectory(AlgorithmStorageRoot);
+                // full name will return a normalized path which is later easier to compare
+                AlgorithmStorageRoot = directoryInfo.FullName;
+            }
+            else
+            {
+                // no storage access so we don't create the folder, but still normalize the path so it's consistent for later comparisons
+                AlgorithmStorageRoot = Path.GetFullPath(AlgorithmStorageRoot);
+            }
 
             // if <= 0 we disable periodic persistence and make it synchronous
             if (Controls.PersistenceIntervalSeconds > 0)
@@ -157,7 +165,7 @@ namespace QuantConnect.Lean.Engine.Storage
                 _persistenceTimer = new Timer(_ => Persist(), null, Controls.PersistenceIntervalSeconds * 1000, Timeout.Infinite);
             }
 
-            Log.Trace($"LocalObjectStore.Initialize(): Storage Root: {directoryInfo.FullName}. StorageFileCount {controls.StorageFileCount}. StorageLimit {BytesToMb(controls.StorageLimit)}MB. StoragePermissions {Controls.StorageAccess}");
+            Log.Trace($"LocalObjectStore.Initialize(): Storage Root: {AlgorithmStorageRoot}. StorageFileCount {controls.StorageFileCount}. StorageLimit {BytesToMb(controls.StorageLimit)}MB. StoragePermissions {Controls.StorageAccess}");
         }
 
         /// <summary>
@@ -282,7 +290,14 @@ namespace QuantConnect.Lean.Engine.Storage
             // Ensure we have the key, also takes care of null or improper access
             if (!ContainsKey(path))
             {
-                throw new KeyNotFoundException($"Object with path '{path}' was not found in the current project. " +
+                // list the available keys so a near-miss (typo, wrong extension) is visible in the error itself
+                var keys = Keys;
+                var sample = string.Join(", ", keys.Take(10).Select(key => $"'{key}'"));
+                if (keys.Count > 10)
+                {
+                    sample += ", ...";
+                }
+                throw new KeyNotFoundException($"Object with path '{path}' was not found in the current project. Keys: [{sample}]. " +
                     "Please use ObjectStore.ContainsKey(key) to check if an object exists before attempting to read."
                 );
             }
@@ -316,15 +331,7 @@ namespace QuantConnect.Lean.Engine.Storage
             {
                 throw new InvalidOperationException($"LocalObjectStore.SaveBytes(): {NoWritePermissionsError}");
             }
-            else if (!_pathRegex.IsMatch(path))
-            {
-                throw new ArgumentException($"LocalObjectStore: path is not supported: '{path}'");
-            }
-            else if (path.Count(c => c == '/') > 100 || path.Count(c => c == '\\') > 100)
-            {
-                // just in case
-                throw new ArgumentException($"LocalObjectStore: path is not supported: '{path}'");
-            }
+            ObjectStore.ValidateKey(path);
 
             // after we check the regex
             path = NormalizePath(path);

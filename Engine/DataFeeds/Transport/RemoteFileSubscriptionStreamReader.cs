@@ -17,7 +17,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using QuantConnect.Interfaces;
+using QuantConnect.Logging;
 using QuantConnect.Util;
 
 namespace QuantConnect.Lean.Engine.DataFeeds.Transport
@@ -32,6 +34,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Transport
         private static IDownloadProvider _downloader;
         // lock for multi thread scenarios where we are sharing the same cached file
         private static readonly object _fileSystemLock = new object();
+
+        /// <summary>
+        /// The unit of the wait between download attempts, settable so the unit tests don't wait on the retries
+        /// </summary>
+        internal static TimeSpan RetryDelayUnit { get; set; } = TimeSpan.FromSeconds(1);
 
         /// <summary>
         /// Gets whether or not this stream reader should be rate limited
@@ -92,16 +99,19 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Transport
                 {
                     if (!File.Exists(LocalFileName))
                     {
-                        bytes = _downloader.DownloadBytes(source, headers, null, null);
+                        bytes = DownloadBytesWithRetry(source, headers);
                     }
                 }
             }
             else
             {
-                bytes = _downloader.DownloadBytes(source, headers, null, null);
+                bytes = DownloadBytesWithRetry(source, headers);
             }
 
-            if (bytes != null)
+            // Only persist a non-empty download. The remote source can intermittently answer with an empty body
+            // (e.g. a transient HTTP 200 with no content); writing/caching that empty response would make the
+            // whole subscription silently yield no data, and with caching enabled the empty file would be reused.
+            if (bytes != null && bytes.Length > 0)
             {
                 File.WriteAllBytes(LocalFileName, bytes);
 
@@ -158,6 +168,47 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Transport
         public static void SetDownloadProvider(IDownloadProvider downloader)
         {
             _downloader = downloader;
+        }
+
+        /// <summary>
+        /// Downloads the given source, retrying a few times on a transient failure. The remote endpoint can
+        /// intermittently throw or answer with an empty body; a bounded retry lets a single hiccup recover
+        /// instead of failing the whole subscription with no data.
+        /// </summary>
+        private static byte[] DownloadBytesWithRetry(string source, IEnumerable<KeyValuePair<string, string>> headers)
+        {
+            const int maxAttempts = 3;
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                try
+                {
+                    var bytes = _downloader.DownloadBytes(source, headers, null, null);
+                    if (bytes != null && bytes.Length > 0)
+                    {
+                        return bytes;
+                    }
+
+                    // a successful but empty response is transient for these sources; retry before giving up
+                    Log.Trace($"RemoteFileSubscriptionStreamReader.DownloadBytesWithRetry(): empty response for {source} " +
+                        $"(attempt {attempt}/{maxAttempts})");
+                }
+                catch (Exception exception)
+                {
+                    if (attempt == maxAttempts)
+                    {
+                        throw;
+                    }
+                    Log.Trace($"RemoteFileSubscriptionStreamReader.DownloadBytesWithRetry(): failed to download {source} " +
+                        $"(attempt {attempt}/{maxAttempts}): {exception.Message}");
+                }
+
+                if (attempt < maxAttempts)
+                {
+                    Thread.Sleep(RetryDelayUnit * (2 + attempt));
+                }
+            }
+
+            return null;
         }
     }
 }

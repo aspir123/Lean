@@ -36,28 +36,12 @@ namespace QuantConnect.Tests
             Config.Set("quandl-auth-token", "WyAazVXnq7ATy_fefTqm");
             Config.Set("forward-console-messages", "false");
 
-            if (parameters.Algorithm == "OptionChainConsistencyRegressionAlgorithm")
-            {
-                // special arrangement for consistency test - we check if limits work fine
-                Config.Set("symbol-minute-limit", "100");
-                Config.Set("symbol-second-limit", "100");
-                Config.Set("symbol-tick-limit", "100");
-            }
-
-            if (parameters.Algorithm == "TrainingInitializeRegressionAlgorithm" ||
-                parameters.Algorithm == "TrainingOnDataRegressionAlgorithm")
-            {
-                // limit time loop to 90 seconds and set leaky bucket capacity to one minute w/ zero refill
-                Config.Set("algorithm-manager-time-loop-maximum", "1.5");
-                Config.Set("scheduled-event-leaky-bucket-capacity", "1");
-                Config.Set("scheduled-event-leaky-bucket-refill-amount", "0");
-            }
-
             var algorithmManager = AlgorithmRunner.RunLocalBacktest(
                 parameters.Algorithm,
                 parameters.Statistics,
                 parameters.Language,
-                parameters.ExpectedFinalStatus
+                parameters.ExpectedFinalStatus,
+                customConfigurations: parameters.CustomConfigurations
             ).AlgorithmManager;
 
             if (parameters.Algorithm == "TrainingOnDataRegressionAlgorithm")
@@ -82,7 +66,7 @@ namespace QuantConnect.Tests
         {
             return GetRegressionTestParameters<IRegressionAlgorithmDefinition, AlgorithmStatisticsTestParameters, BasicTemplateAlgorithm>(canRunLocally: true,
                 (instance, language) => new AlgorithmStatisticsTestParameters(instance.GetType().Name, instance.ExpectedStatistics, language,
-                instance.AlgorithmStatus, instance.DataPoints, instance.AlgorithmHistoryDataPoints));
+                instance.AlgorithmStatus, instance.DataPoints, instance.AlgorithmHistoryDataPoints, instance.CustomConfigurations));
         }
 
         public static TestCaseData[] GetRegressionTestParameters<T, K, J>(bool canRunLocally, Func<T, Language, K> factory)
@@ -99,6 +83,9 @@ namespace QuantConnect.Tests
                 .Select(str => Parse.Enum<Language>(str.Value<string>()))
                 .ToHashSet();
 
+            var shardCount = TestContext.Parameters.Get("regression-shard-count", 1);
+            var shard = TestContext.Parameters.Get("regression-shard", 0);
+
             // find all regression algorithms in Algorithm.CSharp
             return (
                 from type in typeof(J).Assembly.GetTypes()
@@ -111,6 +98,8 @@ namespace QuantConnect.Tests
                 select factory(instance, language)
             )
             .OrderBy(x => x.Language).ThenBy(x => x.Algorithm)
+            // keep this process' share of the cases when they are split across several test runs
+            .Where((_, index) => index % shardCount == shard)
             // generate test cases from test parameters
             .Select(x => new TestCaseData(x).SetName(x.Language + "/" + x.Algorithm))
             .ToArray();
@@ -124,6 +113,7 @@ namespace QuantConnect.Tests
             public AlgorithmStatus ExpectedFinalStatus { get; init; }
             public long DataPoints { get; init; }
             public int AlgorithmHistoryDataPoints { get; init; }
+            public Dictionary<string, string> CustomConfigurations { get; init; }
 
             public AlgorithmStatisticsTestParameters(
                 string algorithm,
@@ -131,7 +121,8 @@ namespace QuantConnect.Tests
                 Language language,
                 AlgorithmStatus expectedFinalStatus,
                 long dataPoints = 0,
-                int algorithmHistoryDataPoints = 0
+                int algorithmHistoryDataPoints = 0,
+                Dictionary<string, string> customConfigurations = null
                 )
             {
                 Algorithm = algorithm;
@@ -140,6 +131,7 @@ namespace QuantConnect.Tests
                 ExpectedFinalStatus = expectedFinalStatus;
                 DataPoints = dataPoints;
                 AlgorithmHistoryDataPoints = algorithmHistoryDataPoints;
+                CustomConfigurations = customConfigurations;
             }
         }
     }

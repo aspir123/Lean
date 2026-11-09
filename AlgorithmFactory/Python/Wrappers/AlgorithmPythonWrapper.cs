@@ -40,7 +40,7 @@ using QuantConnect.Algorithm.Framework.Alphas.Analysis;
 using QuantConnect.Commands;
 using QuantConnect.Algorithm.Framework.Portfolio.SignalExports;
 using QuantConnect.Algorithm.Framework.Execution;
-using Common.Util;
+using QuantConnect.Util;
 
 namespace QuantConnect.AlgorithmFactory.Python.Wrappers
 {
@@ -427,6 +427,12 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         public ObjectStore ObjectStore => _baseAlgorithm.ObjectStore;
 
         /// <summary>
+        /// Gets a read-only view of the deployment details shared by the brokerage, data queue handler or any other component,
+        /// for example account information. Usually empty when not running in live mode
+        /// </summary>
+        public ReadOnlyExtendedDictionary<string, string> DeploymentDetails => _baseAlgorithm.DeploymentDetails;
+
+        /// <summary>
         /// Returns the current Slice object
         /// </summary>
         public Slice CurrentSlice => _baseAlgorithm.CurrentSlice;
@@ -498,7 +504,7 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         public ITimeKeeper TimeKeeper => _baseAlgorithm.TimeKeeper;
 
         /// <summary>
-        /// Data subscription manager controls the information and subscriptions the algorithms recieves.
+        /// Data subscription manager controls the information and subscriptions the algorithms receives.
         /// Subscription configurations can be added through the Subscription Manager.
         /// </summary>
         public SubscriptionManager SubscriptionManager => _baseAlgorithm.SubscriptionManager;
@@ -901,7 +907,7 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
                     // If the method does not return or returns a non-iterable PyObject, throw an exception
                     if (result == null || !result.IsIterable())
                     {
-                        throw new Exception("OnMarginCall must return a non-empty list of SubmitOrderRequest");
+                        throw new Exception(Messages.AlgorithmPythonWrapper.OnMarginCallMustReturnNonEmptyList());
                     }
 
                     requests.Clear();
@@ -919,7 +925,7 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
                     // If the PyObject is an empty list or its items are not SubmitOrderRequest objects, throw an exception
                     if (requests.Count == 0)
                     {
-                        throw new Exception("OnMarginCall must return a non-empty list of SubmitOrderRequest");
+                        throw new Exception(Messages.AlgorithmPythonWrapper.OnMarginCallMustReturnNonEmptyList());
                     }
                 }
             }
@@ -1165,6 +1171,12 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         public void SetParameters(Dictionary<string, string> parameters) => _baseAlgorithm.SetParameters(parameters);
 
         /// <summary>
+        /// Sets the deployment details read-only view
+        /// </summary>
+        /// <param name="deploymentDetails">The deployment details</param>
+        public void SetDeploymentDetails(ReadOnlyExtendedDictionary<string, string> deploymentDetails) => _baseAlgorithm.SetDeploymentDetails(deploymentDetails);
+
+        /// <summary>
         /// Tries to convert a PyObject into a C# object
         /// </summary>
         /// <typeparam name="T">Type of the C# object</typeparam>
@@ -1219,7 +1231,7 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         /// Sets the object store
         /// </summary>
         /// <param name="objectStore">The object store</param>
-        public void SetObjectStore(IObjectStore objectStore) => _baseAlgorithm.SetObjectStore(objectStore);
+        public void SetObjectStore(IObjectStore objectStore) => _baseAlgorithm.SetObjectStore(new PythonObjectStore(objectStore, _baseAlgorithm.Debug));
 
         /// <summary>
         /// Determines if the Symbol is shortable at the brokerage

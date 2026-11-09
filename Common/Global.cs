@@ -506,22 +506,6 @@ namespace QuantConnect
     }
 
     /// <summary>
-    /// Cloud storage permission options.
-    /// </summary>
-    public enum StoragePermissions
-    {
-        /// <summary>
-        /// Public Storage Permissions (0)
-        /// </summary>
-        Public,
-
-        /// <summary>
-        /// Authenticated Read Storage Permissions (1)
-        /// </summary>
-        Authenticated
-    }
-
-    /// <summary>
     /// Types of tick data
     /// </summary>
     /// <remarks>QuantConnect currently only has trade, quote, open interest tick data.</remarks>
@@ -977,11 +961,11 @@ namespace QuantConnect
         /// <remarks>Another example is the Corn 'DEC 2021 ZCZ1' contract, which expires on December, 14 2021, so the mapping date will be December 1, 2021.</remarks>
         FirstDayMonth,
         /// <summary>
-        /// The contract maps when the following back month contract has a higher open interest that the current front month (2)
+        /// The contract maps when the following back month contract has a higher open interest than the current front month (2)
         /// </summary>
         OpenInterest,
         /// <summary>
-        /// The contract maps when any of the back month contracts of the next year have a higher volume that the current front month (3)
+        /// The contract maps when any of the back month contracts of the next year have a higher open interest than the current front month (3)
         /// </summary>
         OpenInterestAnnual,
     }
@@ -1045,6 +1029,9 @@ namespace QuantConnect
                     case "NASDAQ":
                     case "NASDAQ_OMX":
                         return Exchange.NASDAQ;
+                    case "S":
+                    case "NASDAQ_SC":
+                        return Exchange.NASDAQ_SC;
                     case "Z":
                     case "BATS":
                     case "BATS Z":
@@ -1109,12 +1096,14 @@ namespace QuantConnect
                         return Exchange.BOSTON;
                     case "BSE":
                         return Exchange.BSE;
+                    case "V":
                     case "IEX":
                         return Exchange.IEX;
                     case "SMART":
                         return Exchange.SMART;
                     case "OTCX":
                         return Exchange.OTCX;
+                    case "H":
                     case "MP":
                     case "MIAX PEARL":
                     case "MIAX_PEARL":
@@ -1122,6 +1111,7 @@ namespace QuantConnect
                     case "L":
                     case "LTSE":
                         return Exchange.LTSE;
+                    case "U":
                     case "MM":
                     case "MEMX":
                         return Exchange.MEMX;

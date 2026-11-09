@@ -19,6 +19,7 @@ using System.Linq;
 using Newtonsoft.Json;
 using NodaTime;
 using NUnit.Framework;
+using Python.Runtime;
 using QuantConnect.Algorithm;
 using QuantConnect.Algorithm.Framework.Selection;
 using QuantConnect.Algorithm.Selection;
@@ -638,6 +639,22 @@ namespace QuantConnect.Tests.Algorithm
         }
 
         [Test]
+        public void AddDataWithStringAsTypeArgumentThrowsClearError()
+        {
+            var qcAlgorithm = new QCAlgorithm();
+            qcAlgorithm.SubscriptionManager.SetDataManager(new DataManagerStub(qcAlgorithm));
+
+            using var _ = Py.GIL();
+            using var pyTicker = "VIX".ToPython();
+
+            // Passing a string instead of a custom data class as the first argument used to silently build a
+            // dynamic assembly named after the string and later hang/fail downstream. It must now throw.
+            var ex = Assert.Throws<ArgumentException>(() => qcAlgorithm.AddData(pyTicker, "VIX", Resolution.Daily));
+            StringAssert.Contains("AddData", ex.Message);
+            StringAssert.Contains("AddEquity", ex.Message);
+        }
+
+        [Test]
         public void AppendsCustomDataTypeName_ToSecurityIdentifierSymbol()
         {
             const string ticker = "ticker";
@@ -705,6 +722,83 @@ namespace QuantConnect.Tests.Algorithm
 
             var exception = Assert.Throws<ArgumentException>(() => algorithm.AddOptionContract(optionContractSymbol));
             Assert.IsTrue(exception.Message.Contains("is delisted"), $"Unexpected exception message: {exception.Message}");
+        }
+
+        [TestCase(Resolution.Daily, Resolution.Minute, true)]
+        [TestCase(Resolution.Hour, Resolution.Minute, true)]
+        [TestCase(Resolution.Minute, Resolution.Minute, false)]
+        [TestCase(Resolution.Second, Resolution.Minute, false)]
+        public void AddOptionContractWarnsForCoarseUnderlyingResolution(
+            Resolution underlyingResolution, Resolution optionResolution, bool shouldWarn)
+        {
+            var algorithm = Algorithm();
+            var underlying = algorithm.AddEquity("SPY", underlyingResolution).Symbol;
+            var option = Symbol.CreateOption(underlying, Market.USA, OptionStyle.American, OptionRight.Call,
+                100m, new DateTime(2027, 1, 15));
+
+            Assert.DoesNotThrow(() => algorithm.AddOptionContract(option, optionResolution));
+
+            var warnings = algorithm.DebugMessages.Where(message => message.Contains("but its underlying")).ToList();
+            Assert.AreEqual(shouldWarn ? 1 : 0, warnings.Count);
+            if (shouldWarn)
+            {
+                StringAssert.Contains($"Add the underlying at {optionResolution} resolution or finer", warnings.Single());
+            }
+        }
+
+        [Test]
+        public void AddOptionContractUsesHighestAvailableUnderlyingResolution()
+        {
+            var algorithm = Algorithm();
+            var underlying = algorithm.AddEquity("SPY", Resolution.Daily).Symbol;
+            algorithm.AddEquity("SPY", Resolution.Minute);
+            var option = Symbol.CreateOption(underlying, Market.USA, OptionStyle.American, OptionRight.Call,
+                100m, new DateTime(2027, 1, 15));
+
+            Assert.DoesNotThrow(() => algorithm.AddOptionContract(option, Resolution.Minute));
+
+            Assert.IsFalse(algorithm.DebugMessages.Any(message => message.Contains("but its underlying")));
+        }
+
+        [TestCase(Resolution.Daily, Resolution.Minute, true)]
+        [TestCase(Resolution.Minute, Resolution.Minute, false)]
+        [TestCase(Resolution.Second, Resolution.Minute, false)]
+        public void AddOptionWarnsForCoarseUnderlyingResolution(
+            Resolution underlyingResolution, Resolution optionResolution, bool shouldWarn)
+        {
+            var algorithm = Algorithm();
+            algorithm.AddEquity("SPY", underlyingResolution);
+
+            Assert.DoesNotThrow(() => algorithm.AddOption("SPY", optionResolution));
+
+            Assert.AreEqual(shouldWarn ? 1 : 0, algorithm.DebugMessages.Count(message => message.Contains("but its underlying")));
+        }
+
+        [Test]
+        public void AddOptionDoesNotWarnWhenUnderlyingIsNotPresent()
+        {
+            var algorithm = Algorithm();
+
+            Assert.DoesNotThrow(() => algorithm.AddOption("SPY", Resolution.Minute));
+
+            Assert.IsFalse(algorithm.DebugMessages.Any(message => message.Contains("but its underlying")));
+        }
+
+        [Test]
+        public void AddOptionContractWarnsOnceForCoarseUnderlyingResolution()
+        {
+            var algorithm = Algorithm();
+            algorithm.UniverseSettings.Resolution = Resolution.Minute;
+            var underlying = algorithm.AddEquity("SPY", Resolution.Daily).Symbol;
+            var firstOption = Symbol.CreateOption(underlying, Market.USA, OptionStyle.American, OptionRight.Call,
+                100m, new DateTime(2027, 1, 15));
+            var secondOption = Symbol.CreateOption(underlying, Market.USA, OptionStyle.American, OptionRight.Put,
+                105m, new DateTime(2027, 1, 15));
+
+            Assert.DoesNotThrow(() => algorithm.AddOptionContract(firstOption));
+            Assert.DoesNotThrow(() => algorithm.AddOptionContract(secondOption));
+
+            Assert.AreEqual(1, algorithm.DebugMessages.Count(message => message.Contains("but its underlying")));
         }
 
         private static SubscriptionDataConfig GetMatchingSubscription(QCAlgorithm algorithm, Symbol symbol, Type type)

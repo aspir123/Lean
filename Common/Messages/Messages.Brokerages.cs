@@ -111,6 +111,53 @@ namespace QuantConnect
             }
 
             /// <summary>
+            /// Returns a string message saying the given brokerage model does not support contingent orders
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static string UnsupportedContingentOrders(IBrokerageModel brokerageModel)
+            {
+                return Invariant($"The {brokerageModel.GetType().Name} does not support contingent orders (OCO, OTO, OUO, brackets).");
+            }
+
+            /// <summary>
+            /// Returns a string message saying the contingency type of the given order is unsupported by the given brokerage model.
+            /// It also mentions the supported contingency types
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static string UnsupportedContingencyType(IBrokerageModel brokerageModel, Orders.ContingencyType contingencyType,
+                IEnumerable<Orders.ContingencyType> supportedContingencyTypes)
+            {
+                return Invariant($"The {brokerageModel.GetType().Name} does not support {contingencyType} contingent orders. Only supports [{string.Join(',', supportedContingencyTypes)}]");
+            }
+
+            /// <summary>
+            /// Returns a string message saying the given brokerage model does not support updating contingent orders
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static string UnsupportedContingentOrdersUpdate(IBrokerageModel brokerageModel)
+            {
+                return Invariant($"The {brokerageModel.GetType().Name} does not support updating contingent orders, please cancel and submit them again.");
+            }
+
+            /// <summary>
+            /// Returns a string message saying the given brokerage model does not support updating the quantity of contingent orders
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static string UnsupportedContingentOrdersQuantityUpdate(IBrokerageModel brokerageModel)
+            {
+                return Invariant($"The {brokerageModel.GetType().Name} does not support updating the quantity of contingent orders.");
+            }
+
+            /// <summary>
+            /// Returns a string message saying the shape of the set of contingent orders is unsupported by the given brokerage model
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static string UnsupportedContingentOrdersShape(IBrokerageModel brokerageModel, string reason)
+            {
+                return Invariant($"The {brokerageModel.GetType().Name} does not support this set of contingent orders: {reason}");
+            }
+
+            /// <summary>
             /// Returns a string message saying the Time In Force of the given order is unsupported by the given brokerage
             /// model
             /// </summary>
@@ -140,15 +187,6 @@ namespace QuantConnect
             }
 
             /// <summary>
-            /// Returns a message indicating that the specified order type cannot be updated quantity using the given brokerage model.
-            /// </summary>
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public static string UnsupportedUpdateQuantityOrder(IBrokerageModel brokerageModel, OrderType orderType)
-            {
-                return Invariant($"Order type '{orderType}' is not supported to update quantity in the {brokerageModel.GetType().Name}.");
-            }
-
-            /// <summary>
             /// Builds a descriptive error message when a <see cref="OrderType.MarketOnOpen"/> 
             /// order is submitted outside the valid submission window.
             /// </summary>
@@ -163,7 +201,7 @@ namespace QuantConnect
                 in TimeOnly windowStart,
                 in TimeOnly windowEnd)
             {
-                return Invariant($"MarketOnOpen submission time is invalid. Valid local times are {windowStart: hh\\:mm}–{windowEnd: hh\\:mm}. Consider setting DailyPreciseEndTime = false or using {nameof(Schedule)}.{nameof(Schedule.On)}.");
+                return Invariant($"MarketOnOpen submission time is invalid. Valid local times are {windowStart: hh\\:mm}–{windowEnd: hh\\:mm}. Consider setting {FormatCode(nameof(AlgorithmSettings.DailyPreciseEndTime))} = false or using {FormatCodeRoot(nameof(Schedule))}.{FormatCode(nameof(Schedule.On))}.");
             }
         }
 
@@ -180,7 +218,17 @@ namespace QuantConnect
             public static string TradingOutsideRegularHoursNotSupported(IBrokerageModel brokerageModel, OrderType orderType, TimeInForce timeInForce)
             {
                 return Invariant($"The {brokerageModel.GetType().Name} does not support {orderType} orders with {timeInForce} TIF outside regular hours. ") +
-                    Invariant($"Only {OrderType.Limit} orders with {TimeInForce.Day} TIF are supported outside regular trading hours.");
+                    Invariant($"Only {OrderType.Limit} orders with {TimeInForce.Day} or {TimeInForce.GoodTilCanceled} TIF are supported outside regular trading hours.");
+            }
+
+            /// <summary>
+            /// Returns a message indicating that the number of legs of the combo order is not supported by the given brokerage model.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static string UnsupportedComboOrderLegCount(IBrokerageModel brokerageModel, int legCount)
+            {
+                return Invariant($"The {brokerageModel.GetType().Name} does not support combo orders with {legCount} legs. ") +
+                    Invariant($"A combo order takes from 2 to 4 option legs.");
             }
         }
 
@@ -411,7 +459,7 @@ namespace QuantConnect
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static string InvalidOrderQuantityForLotSize(Securities.Security security)
             {
-                return Invariant($"The order quantity must be a multiple of LotSize: [{security.SymbolProperties.LotSize}].");
+                return Invariant($"The order quantity must be a multiple of {FormatCode("LotSize")}: [{security.SymbolProperties.LotSize}].");
             }
 
             /// <summary>
@@ -592,6 +640,54 @@ namespace QuantConnect
             public static string UnsupportedOrderType(Orders.Order order)
             {
                 return Invariant($"{order.Type} order is not supported by Wolverine. Currently, only Market Order is supported.");
+            }
+        }
+
+        /// <summary>
+        /// Provides user-facing messages for the <see cref="Brokerages.WebullBrokerageModel"/> class and its consumers or related classes
+        /// </summary>
+        public static class WebullBrokerageModel
+        {
+            /// <summary>
+            /// Returns a message explaining that Options and IndexOptions sell orders only support Day time in force.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static string InvalidTimeInForceForOptionSellOrder(Orders.Order order)
+            {
+                return Invariant($"{order.Symbol.SecurityType} sell orders only support {nameof(DayTimeInForce)} time in force, but {order.TimeInForce.GetType().Name} was specified.");
+            }
+
+            /// <summary>
+            /// Returns a message explaining that OutsideRegularTradingHours is only supported for Equity orders.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static string OutsideRegularTradingHoursNotSupportedForSecurityType(Securities.Security security)
+            {
+                return Invariant($"{nameof(WebullOrderProperties.OutsideRegularTradingHours)} is only supported for {nameof(SecurityType.Equity)} orders, but {security.Type} was specified.");
+            }
+
+            /// <summary>
+            /// Returns a message explaining that Market orders are not supported outside regular trading hours.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static string MarketOrdersNotSupportedOutsideRegularTradingHours()
+            {
+                return Invariant($"Market orders are not supported outside regular trading hours.");
+            }
+        }
+
+        /// <summary>
+        /// Provides user-facing messages for the <see cref="Brokerages.PublicBrokerageModel"/> class and its consumers or related classes
+        /// </summary>
+        public static class PublicBrokerageModel
+        {
+            /// <summary>
+            /// Returns a message explaining that orders for the extended market must be Limit orders with Day time-in-force.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static string ExtendedMarketOrderMustBeLimit(Orders.Order order)
+            {
+                return Invariant($"Orders for extended market must be of type '{nameof(OrderType.Limit)}' and with 'DAY' time-in-force, but {order.Type} was specified.");
             }
         }
 

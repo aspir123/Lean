@@ -175,7 +175,7 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(Market.FXCM, market);
 
             // Change the data folder so another symbol properties file is used
-            var originalDataFolder = Config.Get("data-folder");
+            var originalDataFolder = Globals.DataFolder;
             Config.Set("data-folder", "./TestData");
             Globals.Reset();
 
@@ -536,6 +536,22 @@ namespace QuantConnect.Tests.Common.Securities
 
             Assert.IsNull(result.MinimumOrderSize);
             Assert.AreEqual(1, result.PriceMagnifier);
+        }
+
+        [Test]
+        public void LoadsCBOEIndexSymbolProperties()
+        {
+            var db = SymbolPropertiesDatabase.FromDataFolder();
+
+            var entries = db.GetSymbolPropertiesList(Market.CBOE, SecurityType.Index).ToList();
+
+            Assert.IsNotEmpty(entries);
+            var wildcardEntry = entries.FirstOrDefault(e => e.Key.Symbol == SecurityDatabaseKey.Wildcard);
+            Assert.IsNotNull(wildcardEntry.Value);
+            Assert.AreEqual("USD", wildcardEntry.Value.QuoteCurrency);
+            Assert.AreEqual(1m, wildcardEntry.Value.ContractMultiplier);
+            Assert.AreEqual(0.01m, wildcardEntry.Value.MinimumPriceVariation);
+            Assert.AreEqual(1m, wildcardEntry.Value.LotSize);
         }
 
         private class TestingSymbolPropertiesDatabase : SymbolPropertiesDatabase

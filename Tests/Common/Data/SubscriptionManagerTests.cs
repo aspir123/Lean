@@ -21,6 +21,7 @@ using System.Threading.Tasks;
 using NodaTime;
 using NUnit.Framework;
 using Python.Runtime;
+using QuantConnect.Algorithm;
 using QuantConnect.Data;
 using QuantConnect.Data.Consolidators;
 using QuantConnect.Data.Market;
@@ -28,6 +29,7 @@ using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Logging;
 using QuantConnect.Statistics;
 using QuantConnect.Tests.Engine.DataFeeds;
+using QuantConnect.Util;
 
 namespace QuantConnect.Tests.Common.Data
 {
@@ -51,6 +53,23 @@ namespace QuantConnect.Tests.Common.Data
             {
                 Assert.IsTrue(types[i].Item2 == expectedTickTypes[i]);
             }
+        }
+
+        [Test]
+        public void SubscriptionsAreMemoizedExposingCount()
+        {
+            var algorithm = new QCAlgorithm();
+            algorithm.SubscriptionManager.SetDataManager(new DataManagerStub(algorithm));
+            algorithm.AddEquity("SPY");
+            algorithm.AddForex("EURUSD");
+
+            var subscriptions = algorithm.SubscriptionManager.Subscriptions;
+
+            // memoized so it exposes a Count property, which also enables len() in Python through Python.NET
+            Assert.IsInstanceOf<MemoizingEnumerable<SubscriptionDataConfig>>(subscriptions);
+            var memoizedSubscriptions = (MemoizingEnumerable<SubscriptionDataConfig>)subscriptions;
+            Assert.Greater(memoizedSubscriptions.Count, 0);
+            Assert.AreEqual(subscriptions.Count(), memoizedSubscriptions.Count);
         }
 
         [Test]
@@ -691,6 +710,61 @@ def get_consolidator():
         }
 
         [Test]
+        public void RemoveConsolidatorDisposesScanWrapperEvenWithoutSubscriptions()
+        {
+            var algorithm = new AlgorithmStub();
+            var symbol = algorithm.AddEquity("SPY").Symbol;
+
+            using var consolidator = new TradeBarConsolidator(TimeSpan.FromHours(1));
+            algorithm.SubscriptionManager.AddConsolidator(symbol, consolidator);
+
+            var consolidatorsField = typeof(SubscriptionManager)
+                .GetField("_consolidators", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var wrappers = (Dictionary<IDataConsolidator, ConsolidatorWrapper>)consolidatorsField.GetValue(algorithm.SubscriptionManager);
+            Assert.AreEqual(1, wrappers.Count);
+            var wrapper = wrappers[consolidator];
+
+            // the security left the universe: its subscription data configs are gone before the consolidator is removed
+            algorithm.SubscriptionManager.SetDataManager(new DataManagerStub(algorithm));
+            Assert.IsEmpty(algorithm.SubscriptionManager.SubscriptionDataConfigService.GetSubscriptionDataConfigs(symbol));
+
+            algorithm.SubscriptionManager.RemoveConsolidator(symbol, consolidator);
+
+            Assert.AreEqual(0, wrappers.Count);
+            Assert.IsTrue(wrapper.Disposed);
+        }
+
+        [Test]
+        public void RemoveConsolidatorsRemovesAllTheSymbolConsolidators()
+        {
+            var algorithm = new AlgorithmStub();
+            var spy = algorithm.AddEquity("SPY").Symbol;
+            var ibm = algorithm.AddEquity("IBM").Symbol;
+
+            using var spyHourConsolidator = new TradeBarConsolidator(TimeSpan.FromHours(1));
+            using var spyDayConsolidator = new TradeBarConsolidator(TimeSpan.FromDays(1));
+            using var ibmConsolidator = new TradeBarConsolidator(TimeSpan.FromHours(1));
+            algorithm.SubscriptionManager.AddConsolidator(spy, spyHourConsolidator);
+            algorithm.SubscriptionManager.AddConsolidator(spy, spyDayConsolidator);
+            algorithm.SubscriptionManager.AddConsolidator(ibm, ibmConsolidator);
+
+            var removed = algorithm.SubscriptionManager.RemoveConsolidators(spy);
+
+            CollectionAssert.AreEquivalent(new[] { spyHourConsolidator, spyDayConsolidator }, removed);
+            Assert.IsEmpty(GetConsolidators(algorithm, spy));
+            CollectionAssert.AreEqual(new[] { ibmConsolidator }, GetConsolidators(algorithm, ibm));
+            Assert.IsEmpty(algorithm.SubscriptionManager.RemoveConsolidators(spy));
+        }
+
+        private static List<IDataConsolidator> GetConsolidators(QCAlgorithm algorithm, Symbol symbol)
+        {
+            return algorithm.SubscriptionManager.Subscriptions
+                .Where(config => config.Symbol == symbol)
+                .SelectMany(config => config.Consolidators)
+                .ToList();
+        }
+
+        [Test, Parallelizable(ParallelScope.None)]
         public void RunRemoveConsolidatorsRegressionAlgorithm()
         {
             var parameter = new RegressionTests.AlgorithmStatisticsTestParameters("ManuallyRemovedConsolidatorsAlgorithm",
