@@ -1466,6 +1466,83 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
         }
 
         [Test]
+        public void BrokerageOrderEventsCarryTheOrderTypeAndTag()
+        {
+            _transactionHandler = new TestBrokerageTransactionHandler();
+            using var brokerage = new NoSubmitTestBrokerage(_algorithm);
+            _transactionHandler.Initialize(_algorithm, brokerage, new BacktestingResultHandler());
+
+            var security = _algorithm.Securities[_symbol];
+            var price = 1.12m;
+            security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
+            var orderRequest = new SubmitOrderRequest(OrderType.Limit, security.Type, security.Symbol, 1000, 0, 1.11m, DateTime.Now, "entry");
+            _algorithm.Transactions.SetOrderProcessor(_transactionHandler);
+            _transactionHandler.Process(orderRequest);
+            _transactionHandler.PumpPendingRequests();
+
+            // brokerages building events from the order id alone do not know the order type or tag
+            var order = _algorithm.Transactions.GetOpenOrders().Single();
+            brokerage.PublishOrderEvent(new OrderEvent(order.Id, order.Symbol, _algorithm.UtcTime, OrderStatus.Submitted,
+                order.Direction, 0, 0, OrderFee.Zero, "Brokerage message"));
+
+            var orderEvent = _algorithm.OrderEvents.Single(orderEvent => orderEvent.Status == OrderStatus.Submitted);
+            Assert.AreEqual(OrderType.Limit, orderEvent.OrderType);
+            Assert.AreEqual(order.Type, orderEvent.OrderType);
+            Assert.IsNull(orderEvent.GroupId);
+            Assert.AreEqual("entry", orderEvent.Tag);
+            Assert.AreEqual("Brokerage message", orderEvent.Message);
+
+            // events after a tag update carry the new tag
+            _transactionHandler.Process(new UpdateOrderRequest(DateTime.Now, order.Id, new UpdateOrderFields { Tag = "exit" }));
+            _transactionHandler.PumpPendingRequests();
+            brokerage.PublishOrderEvent(new OrderEvent(order.Id, order.Symbol, _algorithm.UtcTime, OrderStatus.Filled,
+                order.Direction, 1.11m, 1000, OrderFee.Zero));
+
+            orderEvent = _algorithm.OrderEvents.Single(orderEvent => orderEvent.Status == OrderStatus.Filled);
+            Assert.AreEqual("exit", orderEvent.Tag);
+        }
+
+        [Test]
+        public void BrokerageOrderEventsCarryTheGroupId()
+        {
+            var algorithm = new TestAlgorithm { HistoryProvider = new EmptyHistoryProvider() };
+            algorithm.SubscriptionManager.SetDataManager(new DataManagerStub(algorithm));
+            algorithm.SetBrokerageModel(BrokerageName.Default);
+            algorithm.SetCash(1000000);
+            var index = algorithm.AddIndex("SPX").Symbol;
+            var option = Symbol.CreateOption(index, Market.USA, OptionStyle.European, OptionRight.Put, 300m, new DateTime(2024, 05, 16));
+            algorithm.AddIndexOptionContract(option);
+            algorithm.SetFinishedWarmingUp();
+
+            _transactionHandler = new TestBrokerageTransactionHandler();
+            using var brokerage = new NoSubmitTestBrokerage(algorithm);
+            _transactionHandler.Initialize(algorithm, brokerage, new BacktestingResultHandler());
+            algorithm.Transactions.SetOrderProcessor(_transactionHandler);
+
+            var dateTime = new DateTime(2024, 05, 14, 12, 0, 0);
+            var groupOrderManager = new GroupOrderManager(1, 2, 10);
+            foreach (var (symbol, price) in new[] { (index, 1.12m), (option, 330.12m) })
+            {
+                var security = algorithm.Securities[symbol];
+                security.SetMarketPrice(new Tick(dateTime, symbol, price, price, price));
+                algorithm.Transactions.AddOrder(new SubmitOrderRequest(OrderType.ComboMarket, security.Type, symbol, 10, 0, 0, dateTime, "",
+                    groupOrderManager: groupOrderManager));
+            }
+            _transactionHandler.PumpPendingRequests();
+
+            var order = algorithm.Transactions.GetOpenOrders().Single(openOrder => openOrder.Symbol == option);
+            Assert.AreEqual(1, order.GroupOrderManager.Id);
+
+            // brokerages building events from the order id alone do not know the order group
+            brokerage.PublishOrderEvent(new OrderEvent(order.Id, order.Symbol, algorithm.UtcTime, OrderStatus.PartiallyFilled,
+                order.Direction, 330.12m, 1, OrderFee.Zero));
+
+            var orderEvent = algorithm.OrderEvents.Single(orderEvent => orderEvent.Status == OrderStatus.PartiallyFilled);
+            Assert.AreEqual(OrderType.ComboMarket, orderEvent.OrderType);
+            Assert.AreEqual(order.GroupOrderManager.Id, orderEvent.GroupId);
+        }
+
+        [Test]
         public void CancelOrderRequestShouldFailForFilledOrder()
         {
             // Initializes the transaction handler
@@ -2218,6 +2295,45 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             Assert.That(algorithm.Transactions.GetOrderTickets().Count(), Is.EqualTo(1));
             Assert.That(algorithm.Portfolio[optionSymbol].Quantity, Is.EqualTo(0));
             Assert.That(algorithm.Portfolio[equity.Symbol].Quantity, Is.EqualTo(200));
+        }
+
+        [TestCase(true, 1, 0, -600, Description = "Short Call -> ITM, not listed at the brokerage, the sync books the assignment")]
+        [TestCase(false, 0, -7, 100, Description = "Short Call -> ITM, not listed at the brokerage, the brokerage reports option position changes itself, nothing booked")]
+        public void ProcessSynchronousEventsSyncsTheOptionHoldingsOnlyWhenTheBrokerageEnablesIt(
+            bool holdingsSyncEnabled,
+            int expectedTickets,
+            int expectedOptionPosition,
+            int expectedUnderlyingPosition
+            )
+        {
+            // Arrange: a short SPY call, ITM before its expiry, with 100 shares of the underlying, in live mode
+            var algorithm = new TestAlgorithm();
+            var equity = algorithm.AddEquity("SPY");
+            var optionSymbol = Symbol.CreateOption(equity.Symbol, equity.Symbol.ID.Market, OptionStyle.American, OptionRight.Call, 450m, new DateTime(2021, 9, 10));
+            var option = algorithm.AddOptionContract(optionSymbol);
+            algorithm.Portfolio[equity.Symbol].SetHoldings(455m, 100);
+            algorithm.Portfolio[option.Symbol].SetHoldings(0.01m, -7);
+            equity.SetMarketPrice(new Tick { Value = 455m });
+            algorithm.SetLiveMode(true);
+
+            using var brokerage = new NoSubmitTestBrokerage(algorithm, holdingsSyncEnabled);
+            // the brokerage does not list the contract, as a stale holdings read does after a reconnect
+            brokerage.AccountHoldings = new List<Holding> { new Holding { Symbol = equity.Symbol, Quantity = 100 } };
+            _transactionHandler = new TestBrokerageTransactionHandler();
+            _transactionHandler.Initialize(algorithm, brokerage, new BacktestingResultHandler());
+            algorithm.Transactions.SetOrderProcessor(_transactionHandler);
+
+            // 8 AM ET on 2021-09-09, inside the daily cash sync window
+            _transactionHandler.TestCurrentTimeUtc = new DateTime(2021, 9, 9, 12, 0, 0);
+
+            // Act
+            _transactionHandler.ProcessSynchronousEvents();
+            _transactionHandler.Exit();
+
+            // Assert
+            Assert.That(algorithm.Transactions.GetOrderTickets().Count(), Is.EqualTo(expectedTickets));
+            Assert.That(algorithm.Portfolio[optionSymbol].Quantity, Is.EqualTo(expectedOptionPosition));
+            Assert.That(algorithm.Portfolio[equity.Symbol].Quantity, Is.EqualTo(expectedUnderlyingPosition));
         }
 
         // Short Call --> OTM (expired worthless)
@@ -3382,9 +3498,12 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
 
             public override bool IsConnected => _underlyingBrokerage.IsConnected;
 
-            public NoSubmitTestBrokerage(IAlgorithm algorithm) : base("NoSubmitTestBrokerage")
+            public override bool HoldingsSyncEnabled { get; }
+
+            public NoSubmitTestBrokerage(IAlgorithm algorithm, bool holdingsSyncEnabled = true) : base("NoSubmitTestBrokerage")
             {
                 _underlyingBrokerage = new BacktestingBrokerage(algorithm);
+                HoldingsSyncEnabled = holdingsSyncEnabled;
             }
             public override bool PlaceOrder(Order order)
             {
