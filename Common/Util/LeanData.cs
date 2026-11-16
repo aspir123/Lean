@@ -1196,7 +1196,7 @@ namespace QuantConnect.Util
                             return false;
                         }
 
-                        (symbol, date) = ParseUniversePath(info, securityType);
+                        (symbol, date) = ParseUniversePath(info, securityType, info[startIndex + 1]);
                         return true;
                     }
                 }
@@ -1279,10 +1279,11 @@ namespace QuantConnect.Util
         /// </list>
         /// </param>
         /// <param name="securityType">The type of security for which the symbol is being created.</param>
+        /// <param name="market">The market for which the symbol is being created.</param>
         /// <returns>A tuple containing the parsed <see cref="Symbol"/> and the universe processing file date.</returns>
         /// <exception cref="ArgumentException">Thrown if the file path does not contain 'universes'.</exception>
         /// <exception cref="NotSupportedException">Thrown if the security type is not supported.</exception>
-        private static (Symbol symbol, DateTime processingDate) ParseUniversePath(IReadOnlyList<string> filePathParts, SecurityType securityType)
+        private static (Symbol symbol, DateTime processingDate) ParseUniversePath(IReadOnlyList<string> filePathParts, SecurityType securityType, string market)
         {
             if (!filePathParts.Contains("universes", StringComparer.InvariantCultureIgnoreCase))
             {
@@ -1290,7 +1291,6 @@ namespace QuantConnect.Util
             }
 
             var symbol = default(Symbol);
-            var market = filePathParts[2];
             var ticker = filePathParts[^2];
             var universeFileDate = DateTime.ParseExact(filePathParts[^1], DateFormat.EightCharacter, DateTimeFormatInfo.InvariantInfo, DateTimeStyles.None);
             switch (securityType)
@@ -1477,6 +1477,33 @@ namespace QuantConnect.Util
         }
 
         /// <summary>
+        /// Helper method to return the intraday bar start time and period, anchored to the market open, without extending past the close
+        /// </summary>
+        /// <param name="exchangeTimeZoneDate">The point in time we want to get the bar information about</param>
+        /// <param name="period">The intraday consolidation period</param>
+        /// <param name="exchangeHours">The associated exchange hours</param>
+        /// <param name="extendedMarketHours">True if extended market hours should be taken into consideration</param>
+        /// <returns>The calendar information that holds a start time and a period</returns>
+        public static CalendarInfo GetIntradayCalendar(DateTime exchangeTimeZoneDate, TimeSpan period, SecurityExchangeHours exchangeHours, bool extendedMarketHours)
+        {
+            var marketOpen = exchangeHours.IsOpen(exchangeTimeZoneDate, extendedMarketHours)
+                ? exchangeHours.GetPreviousMarketOpen(exchangeTimeZoneDate.AddTicks(1), extendedMarketHours)
+                : exchangeHours.GetPreviousMarketOpen(exchangeTimeZoneDate, extendedMarketHours);
+
+            var intervalsPassed = (long)Math.Floor((exchangeTimeZoneDate - marketOpen).Ticks / (double)period.Ticks);
+            var startTime = marketOpen.AddTicks(intervalsPassed * period.Ticks);
+
+            // keep the last bar from extending past the market close
+            var endTime = startTime + period;
+            var marketClose = exchangeHours.GetNextMarketClose(marketOpen, extendedMarketHours);
+            if (endTime > marketClose)
+            {
+                endTime = marketClose;
+            }
+            return new CalendarInfo(startTime, endTime - startTime);
+        }
+
+        /// <summary>
         /// Helper method to get the next daily end time, taking into account strict end times if appropriate
         /// </summary>
         public static DateTime GetNextDailyEndTime(Symbol symbol, DateTime exchangeTimeZoneDate, SecurityExchangeHours exchangeHours)
@@ -1513,7 +1540,7 @@ namespace QuantConnect.Util
         /// Helper method to determine if we should use strict end time
         /// </summary>
         /// <param name="symbol">The associated symbol</param>
-        /// <param name="increment">The datas time increment</param>
+        /// <param name="increment">The data's time increment</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool UseStrictEndTime(bool dailyStrictEndTimeEnabled, Symbol symbol, TimeSpan increment, SecurityExchangeHours exchangeHours)
         {
@@ -1562,7 +1589,7 @@ namespace QuantConnect.Util
         }
 
         /// <summary>
-        /// Helper method that if appropiate, will set the Time and EndTime of the given data point to it's daily strict times
+        /// Helper method that if appropriate, will set the Time and EndTime of the given data point to it's daily strict times
         /// </summary>
         /// <param name="baseData">The target data point</param>
         /// <param name="exchange">The associated exchange hours</param>

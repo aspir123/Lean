@@ -54,7 +54,13 @@ namespace QuantConnect.Lean.Launcher
             // expect first argument to be config file name
             if (args.Length > 0)
             {
-                Config.MergeCommandLineArgumentsWithConfiguration(LeanArgumentParser.ParseArguments(args));
+                var cliArguments = LeanArgumentParser.ParseArguments(args);
+                // Unknown arguments throw, so arguments that parse to no options only requested help or version, already shown
+                if (cliArguments.Count == 0)
+                {
+                    return;
+                }
+                Config.MergeCommandLineArgumentsWithConfiguration(cliArguments);
             }
 
             //Name thread for the profiler:
@@ -138,12 +144,19 @@ namespace QuantConnect.Lean.Launcher
             // clean up resources
             leanEngineSystemHandlers.DisposeSafely();
             leanEngineAlgorithmHandlers.DisposeSafely();
-            Log.LogHandler.DisposeSafely();
             OS.Dispose();
-
-            PythonInitializer.Shutdown();
+            try
+            {
+                var isolator = new Isolator();
+                isolator.ExecuteWithTimeLimit(TimeSpan.FromSeconds(10), PythonInitializer.Shutdown, -1);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, $"Failed to shutdown python");
+            }
 
             Log.Trace("Program.Main(): Exiting Lean...");
+            Log.LogHandler.DisposeSafely();
             Environment.Exit(exitCode);
         }
     }

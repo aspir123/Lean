@@ -2439,6 +2439,58 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(initialCash + cashDifference, algorithm.Portfolio.CashBook.TotalValueInAccountCurrency);
         }
 
+        [TestCase(true)]
+        [TestCase(false)]
+        public void SplitPartialSharesCashInLieuIsConvertedToAccountCurrency(bool hasData)
+        {
+            var algorithm = new QCAlgorithm();
+            algorithm.SubscriptionManager.SetDataManager(new DataManagerStub(algorithm));
+            algorithm.SetLiveMode(true);
+            // EUR account holding a USD denominated equity
+            algorithm.SetAccountCurrency(Currencies.EUR, 1000m);
+
+            var spy = algorithm.AddEquity("SPY");
+            var usdCash = algorithm.Portfolio.CashBook[Currencies.USD];
+            usdCash.CurrencyConversion = new TestCurrencyConversion(Currencies.USD, Currencies.EUR, 0.9m);
+            Assert.AreEqual(0.9m, spy.QuoteCurrency.ConversionRate);
+
+            if (hasData)
+            {
+                spy.SetMarketPrice(new TradeBar(new DateTime(2000, 01, 01), Symbols.SPY, 10m, 10m, 10m, 10m, 100m, Time.OneMinute));
+            }
+            spy.Holdings.SetHoldings(10m, 3);
+            var initialCash = algorithm.Portfolio.CashBook.TotalValueInAccountCurrency;
+            Assert.AreEqual(1000m, initialCash);
+
+            // 1 for 2 reverse split: 3 shares -> 1 share plus half a share paid in cash.
+            // The reference price is the pre split price
+            var split = new Split(Symbols.SPY, new DateTime(2000, 01, 01), 10m, 2m, SplitType.SplitOccurred);
+            algorithm.Portfolio.ApplySplit(split,
+                spy,
+                algorithm.LiveMode,
+                algorithm.SubscriptionManager.SubscriptionDataConfigService
+                    .GetSubscriptionDataConfigs(spy.Symbol)
+                    .DataNormalizationMode());
+
+            Assert.AreEqual(1, spy.Holdings.Quantity);
+            Assert.AreEqual(20m, spy.Holdings.AveragePrice);
+
+            // half a share at 20 USD post split is 10 USD, which is 9 EUR
+            var expectedCashInLieu = 0.5m * 20m * 0.9m;
+            Assert.AreEqual(9m, expectedCashInLieu);
+            Assert.AreEqual(initialCash + expectedCashInLieu, algorithm.Portfolio.CashBook[Currencies.EUR].Amount);
+            Assert.AreEqual(0m, usdCash.Amount);
+            Assert.AreEqual(initialCash + expectedCashInLieu, algorithm.Portfolio.CashBook.TotalValueInAccountCurrency);
+
+            if (hasData)
+            {
+                // 1 share at 20 USD is 18 EUR, total portfolio value is unchanged by the split
+                Assert.AreEqual(20m, spy.Price);
+                Assert.AreEqual(18m, spy.Holdings.HoldingsValue);
+                Assert.AreEqual(1027m, algorithm.Portfolio.TotalPortfolioValue);
+            }
+        }
+
         [Test]
         public void HoldingsPriceIsUpdatedOnSplit()
         {
@@ -2530,6 +2582,33 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(profitLoss + dividendPayment - fee, algorithm.Portfolio.TotalNetProfit);
         }
 
+        [TestCase(DataNormalizationMode.Raw, 90)]
+        [TestCase(DataNormalizationMode.SplitAdjusted, 90)]
+        [TestCase(DataNormalizationMode.Adjusted, 100)]
+        [TestCase(DataNormalizationMode.TotalReturn, 100)]
+        public void CashDividendIsPaidOutOfThePrice(DataNormalizationMode mode, decimal expectedPrice)
+        {
+            var algorithm = new QCAlgorithm();
+            algorithm.SubscriptionManager.SetDataManager(new DataManagerStub(algorithm));
+
+            var spy = algorithm.AddEquity("SPY", dataNormalizationMode: mode);
+            // Update with both a trade and quote bar
+            spy.SetMarketPrice(new TradeBar(new DateTime(2000, 01, 01), Symbols.SPY, 100m, 100m, 100m, 100m, 100m, Time.OneMinute));
+            spy.SetMarketPrice(new QuoteBar(new DateTime(2000, 01, 01), Symbols.SPY, new Bar(100m, 100m, 100m, 100m), 100m, new Bar(100m, 100m, 100m, 100m), 100m, Time.OneMinute));
+            spy.Holdings.SetHoldings(100m, 100);
+            var initialPortfolioValue = algorithm.Portfolio.TotalPortfolioValue;
+
+            var dividend = new Dividend(Symbols.SPY, new DateTime(2000, 01, 02), 10m, 100m);
+            algorithm.Portfolio.ApplyDividend(dividend, algorithm.LiveMode, mode);
+
+            Assert.AreEqual(expectedPrice, spy.Price);
+            Assert.AreEqual(expectedPrice, spy.Holdings.Price);
+            Assert.AreEqual(expectedPrice, spy.Cache.GetData<TradeBar>().Close);
+            Assert.AreEqual(expectedPrice, spy.Cache.GetData<QuoteBar>().Close);
+            // the distribution moves from the holdings into the cash, the portfolio value is the same
+            Assert.AreEqual(initialPortfolioValue, algorithm.Portfolio.TotalPortfolioValue);
+        }
+
         [TestCase()]
         [TestCase(200000)]
         public void SetAccountCurrency(decimal? startingCash = null)
@@ -2576,20 +2655,86 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.Throws<InvalidOperationException>(() => algorithm.Portfolio.SetAccountCurrency(Currencies.USD));
         }
 
-        [TestCase("SetCash(decimal cash)")]
-        [TestCase("SetCash(string symbol, ...)")]
-        public void CanNotChangeAccountCurrencyAfterSettingCash(string overload)
+        [Test]
+        public void ChangeAccountCurrencyAfterImplicitSetCashRelabelsAmountToNewCurrency()
         {
             var algorithm = new QCAlgorithm();
-            if (overload == "SetCash(decimal cash)")
-            {
-                algorithm.Portfolio.SetCash(10);
-            }
-            else
-            {
-                algorithm.Portfolio.SetCash(Currencies.USD, 1, 1);
-            }
-            Assert.Throws<InvalidOperationException>(() => algorithm.Portfolio.SetAccountCurrency(Currencies.USD));
+            // SetCash(decimal) means "this many units of the (eventual) account currency",
+            // so switching the account currency re-labels the amount instead of preserving USD.
+            algorithm.Portfolio.SetCash(1);
+
+            Assert.DoesNotThrow(() => algorithm.Portfolio.SetAccountCurrency("BTC"));
+
+            Assert.AreEqual("BTC", algorithm.Portfolio.CashBook.AccountCurrency);
+            Assert.AreEqual(1m, algorithm.Portfolio.CashBook["BTC"].Amount);
+            Assert.IsFalse(algorithm.Portfolio.CashBook.ContainsKey(Currencies.USD));
+        }
+
+        [Test]
+        public void ChangeAccountCurrencyAfterExplicitSetCashKeepsPreviousCash()
+        {
+            var algorithm = new QCAlgorithm();
+            // SetCash(symbol, ...) commits cash to a specific currency, so switching the account
+            // currency must keep that balance in its own entry and start the new one at zero.
+            algorithm.Portfolio.SetCash(Currencies.USD, 100000, 1);
+
+            Assert.DoesNotThrow(() => algorithm.Portfolio.SetAccountCurrency("BTC"));
+
+            Assert.AreEqual("BTC", algorithm.Portfolio.CashBook.AccountCurrency);
+            Assert.AreEqual(100000m, algorithm.Portfolio.CashBook[Currencies.USD].Amount);
+            Assert.AreEqual(0m, algorithm.Portfolio.CashBook["BTC"].Amount);
+        }
+
+        [Test]
+        public void ChangeAccountCurrencyAfterImplicitSetCashAppliesStartingCashToNewCurrency()
+        {
+            var algorithm = new QCAlgorithm();
+            algorithm.Portfolio.SetCash(100000);
+
+            algorithm.Portfolio.SetAccountCurrency(Currencies.EUR, 50000);
+
+            Assert.AreEqual(Currencies.EUR, algorithm.Portfolio.CashBook.AccountCurrency);
+            Assert.AreEqual(50000m, algorithm.Portfolio.CashBook[Currencies.EUR].Amount);
+            Assert.IsFalse(algorithm.Portfolio.CashBook.ContainsKey(Currencies.USD));
+        }
+
+        [Test]
+        public void ChangeAccountCurrencyAfterExplicitSetCashAppliesStartingCashToNewCurrency()
+        {
+            var algorithm = new QCAlgorithm();
+            algorithm.Portfolio.SetCash(Currencies.USD, 100000, 1);
+
+            algorithm.Portfolio.SetAccountCurrency(Currencies.EUR, 50000);
+
+            Assert.AreEqual(Currencies.EUR, algorithm.Portfolio.CashBook.AccountCurrency);
+            Assert.AreEqual(100000m, algorithm.Portfolio.CashBook[Currencies.USD].Amount);
+            Assert.AreEqual(50000m, algorithm.Portfolio.CashBook[Currencies.EUR].Amount);
+        }
+
+        [Test]
+        public void SetAccountCurrencyWithSameCurrencyOverridesStartingCash()
+        {
+            var algorithm = new QCAlgorithm();
+            algorithm.Portfolio.SetCash(100000);
+
+            // Calling SetAccountCurrency with the same currency must overwrite the previously
+            // set cash amount instead of keeping the older value.
+            algorithm.Portfolio.SetAccountCurrency(Currencies.USD, 200000);
+
+            Assert.AreEqual(Currencies.USD, algorithm.Portfolio.CashBook.AccountCurrency);
+            Assert.AreEqual(200000m, algorithm.Portfolio.CashBook[Currencies.USD].Amount);
+        }
+
+        [Test]
+        public void SetAccountCurrencyWithSameCurrencyAndNoStartingCashKeepsExistingAmount()
+        {
+            var algorithm = new QCAlgorithm();
+            algorithm.Portfolio.SetCash(100000);
+
+            algorithm.Portfolio.SetAccountCurrency(Currencies.USD);
+
+            Assert.AreEqual(Currencies.USD, algorithm.Portfolio.CashBook.AccountCurrency);
+            Assert.AreEqual(100000m, algorithm.Portfolio.CashBook[Currencies.USD].Amount);
         }
 
         [Test]

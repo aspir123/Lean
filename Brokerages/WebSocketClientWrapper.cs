@@ -41,6 +41,11 @@ namespace QuantConnect.Brokerages
         private readonly object _locker = new object();
 
         /// <summary>
+        /// The permessage-deflate compression options offered to the server when connecting, null to disable compression
+        /// </summary>
+        public WebSocketDeflateOptions DeflateOptions { get; set; }
+
+        /// <summary>
         /// Wraps constructor
         /// </summary>
         /// <param name="url">The target websocket url</param>
@@ -215,13 +220,13 @@ namespace QuantConnect.Brokerages
         {
             var receiveBuffer = new byte[ReceiveBufferSize];
 
+            const int maximumWaitTimeOnError = 120 * 1000;
+            const int minimumWaitTimeOnError = 2 * 1000;
+            var waitTimeOnError = minimumWaitTimeOnError;
+            ClientWebSocket client = null;
             while (_cts is { IsCancellationRequested: false })
             {
                 Log.Trace($"WebSocketClientWrapper.HandleConnection({_url}): Connecting...");
-
-                const int maximumWaitTimeOnError = 120 * 1000;
-                const int minimumWaitTimeOnError = 2 * 1000;
-                var waitTimeOnError = minimumWaitTimeOnError;
                 using (var connectionCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token))
                 {
                     try
@@ -229,10 +234,14 @@ namespace QuantConnect.Brokerages
                         lock (_locker)
                         {
                             _client.DisposeSafely();
-                            _client = new ClientWebSocket();
+                            _client = client = new ClientWebSocket();
                             if (_sessionToken != null)
                             {
                                 _client.Options.SetRequestHeader("x-session-token", _sessionToken);
+                            }
+                            if (DeflateOptions != null)
+                            {
+                                _client.Options.DangerousDeflateOptions = DeflateOptions;
                             }
                             _client.ConnectAsync(new Uri(_url), connectionCts.Token).SynchronouslyAwaitTask();
                         }
@@ -241,21 +250,20 @@ namespace QuantConnect.Brokerages
                         while ((_client.State == WebSocketState.Open || _client.State == WebSocketState.CloseSent) &&
                             !connectionCts.IsCancellationRequested)
                         {
+                            // reset wait time
+                            waitTimeOnError = minimumWaitTimeOnError;
                             var messageData = ReceiveMessage(_client, connectionCts.Token, receiveBuffer);
 
                             if (messageData == null)
                             {
                                 break;
                             }
-
-                            // reset wait time
-                            waitTimeOnError = minimumWaitTimeOnError;
                             OnMessage(new WebSocketMessage(this, messageData));
                         }
                     }
                     catch (OperationCanceledException) { }
                     catch (ObjectDisposedException) { }
-                    catch (WebSocketException ex)
+                    catch (Exception ex)
                     {
                         if (!connectionCts.IsCancellationRequested)
                         {
@@ -263,14 +271,7 @@ namespace QuantConnect.Brokerages
                             connectionCts.Token.WaitHandle.WaitOne(waitTimeOnError);
 
                             // increase wait time until a maximum value. This is useful during brokerage down times
-                            waitTimeOnError += Math.Min(maximumWaitTimeOnError, waitTimeOnError);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        if (!connectionCts.IsCancellationRequested)
-                        {
-                            OnError(new WebSocketError(ex.Message, ex));
+                            waitTimeOnError = Math.Min(maximumWaitTimeOnError, waitTimeOnError * 2);
                         }
                     }
 
@@ -280,6 +281,10 @@ namespace QuantConnect.Brokerages
                     }
                 }
             }
+
+            // Close() cancels the receive, which aborts the connection, but a cancellation that lands before the first receive,
+            // while the Open handlers run, leaves the connection open after Close() returns
+            client?.Abort();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

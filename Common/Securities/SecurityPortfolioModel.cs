@@ -79,9 +79,10 @@ namespace QuantConnect.Securities
                     security.SettlementModel.ApplyFunds(new ApplyFundsSettlementModelParameters(portfolio, security, fill.UtcTime, new CashAmount(fill.FillQuantity, forex.BaseCurrency.Symbol), fill));
                 }
 
-                // did we close or open a position further?
-                closedPosition = isLong && fill.Direction == OrderDirection.Sell
-                             || isShort && fill.Direction == OrderDirection.Buy;
+                // did we close or open a position further? an event with no fill quantity, such as the brokerage
+                // closing an order short of its quantity after its last fill, trades nothing
+                closedPosition = fill.FillQuantity != 0
+                    && (isLong && fill.Direction == OrderDirection.Sell || isShort && fill.Direction == OrderDirection.Buy);
 
                 // calculate the last trade profit
                 if (closedPosition)
@@ -178,15 +179,15 @@ namespace QuantConnect.Securities
         {
             var absoluteHoldingsQuantity = security.Holdings.AbsoluteQuantity;
 
-            // profit = (closed sale value - cost)*conversion to account currency
-            // closed sale value = quantity closed * fill price       BUYs are deemed negative cash flow
-            // cost = quantity closed * average holdings price        SELLS are deemed positive cash flow
+            // Match the closed quantity's sign to the existing position.
             var absoluteQuantityClosed = Math.Min(fill.AbsoluteFillQuantity, absoluteHoldingsQuantity);
             var quantityClosed = Math.Sign(-fill.FillQuantity) * absoluteQuantityClosed;
             var closedCost = security.Holdings.GetQuantityValue(quantityClosed, security.Holdings.AveragePrice);
             var closedSaleValueInQuoteCurrency = security.Holdings.GetQuantityValue(quantityClosed, fill.FillPrice);
 
-            var lastTradeProfit = new ConvertibleCashAmount(closedSaleValueInQuoteCurrency.Amount - closedCost.Amount, closedSaleValueInQuoteCurrency.Cash);
+            var lastTradeProfit = new ConvertibleCashAmount(
+                security.Holdings.GetProfitFromValueChange(closedCost.Amount, closedSaleValueInQuoteCurrency.Amount),
+                closedSaleValueInQuoteCurrency.Cash);
 
             // Reflect account cash adjustment for futures/CFD position
             if (security.Type == SecurityType.Future || security.Type == SecurityType.Cfd || security.Type == SecurityType.CryptoFuture)

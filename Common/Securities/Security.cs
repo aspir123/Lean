@@ -987,12 +987,12 @@ namespace QuantConnect.Securities
         /// <param name="key">The property key</param>
         /// <param name="value">The property value</param>
         /// <returns>True if the property is found.</returns>
-        /// <exception cref="InvalidCastException">If the property is found but its value cannot be casted to the speficied type</exception>
+        /// <exception cref="InvalidCastException">If the property is found but its value cannot be casted to the specified type</exception>
         public bool TryGet<T>(string key, out T value)
         {
             if (Cache.Properties.TryGetValue(key, out var obj))
             {
-                value = CastDynamicPropertyValue<T>(obj);
+                value = CastDynamicPropertyValue<T>(key, obj);
                 return true;
             }
             value = default;
@@ -1007,7 +1007,7 @@ namespace QuantConnect.Securities
         /// <exception cref="KeyNotFoundException">If the property is not found</exception>
         public T Get<T>(string key)
         {
-            return CastDynamicPropertyValue<T>(Cache.Properties[key]);
+            return CastDynamicPropertyValue<T>(key, Cache.Properties[key]);
         }
 
         /// <summary>
@@ -1032,7 +1032,7 @@ namespace QuantConnect.Securities
             var result = Cache.Properties.Remove(key, out object objectValue);
             if (result)
             {
-                value = CastDynamicPropertyValue<T>(objectValue);
+                value = CastDynamicPropertyValue<T>(key, objectValue);
             }
             return result;
         }
@@ -1158,7 +1158,7 @@ namespace QuantConnect.Securities
         /// Casts a dynamic property value to the specified type.
         /// Useful for cases where the property value is a PyObject and we want to cast it to the underlying type.
         /// </summary>
-        private static T CastDynamicPropertyValue<T>(object obj)
+        private static T CastDynamicPropertyValue<T>(string key, object obj)
         {
             T value;
             var pyObj = obj as PyObject;
@@ -1166,7 +1166,16 @@ namespace QuantConnect.Securities
             {
                 using (Py.GIL())
                 {
-                    value = pyObj.As<T>();
+                    try
+                    {
+                        value = pyObj.As<T>();
+                    }
+                    catch (InvalidCastException exception)
+                    {
+                        throw new InvalidCastException(
+                            $"Unable to get the '{key}' property from {pyObj.ToDisplayString()}: it is not a supported {typeof(T).Name} value.",
+                            exception);
+                    }
                 }
             }
             else
@@ -1184,6 +1193,16 @@ namespace QuantConnect.Securities
         {
             Cache.ApplySplit(split);
             UpdateMarketPrice(Cache.GetData());
+        }
+
+        /// <summary>
+        /// Applies the cash dividend to the security
+        /// </summary>
+        internal void ApplyDividend(Dividend dividend)
+        {
+            Cache.ApplyDividend(dividend);
+            // the adjusted price is not a new observation, so only the holdings take it
+            Holdings.UpdateMarketPrice(Price);
         }
 
         /// <summary>

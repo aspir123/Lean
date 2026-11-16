@@ -184,6 +184,10 @@ namespace QuantConnect.Lean.Engine.Setup
 
                 brokerage.Message += brokerageOnMessage;
 
+                // messages the brokerage raises while connecting are logged with the algorithm time,
+                // which is otherwise still the default start date
+                algorithm.SetDateTime(DateTime.UtcNow);
+
                 Log.Trace("BrokerageSetupHandler.Setup(): Connecting to brokerage...");
                 try
                 {
@@ -480,16 +484,28 @@ namespace QuantConnect.Lean.Engine.Setup
         /// </summary>
         /// <param name="algorithm">Algorithm instance</param>
         /// <param name="resultHandler">The configured result handler</param>
-        /// <param name="transactionHandler">The configurated transaction handler</param>
+        /// <param name="transactionHandler">The configured transaction handler</param>
         /// <param name="brokerage">Brokerage output instance</param>
         protected void GetOpenOrders(IAlgorithm algorithm, IResultHandler resultHandler, ITransactionHandler transactionHandler, IBrokerage brokerage)
         {
             // populate the algorithm with the account's outstanding orders
             var openOrders = brokerage.GetOpenOrders();
 
+            var zeroQuantityWarningSent = false;
             // add options first to ensure raw data normalization mode is set on the equity underlyings
             foreach (var order in openOrders.OrderByDescending(x => x.SecurityType))
             {
+                if (order.Quantity == 0)
+                {
+                    Log.Trace($"BrokerageSetupHandler.Setup(): Ignoring open order with zero quantity: {order}");
+                    if (!zeroQuantityWarningSent)
+                    {
+                        zeroQuantityWarningSent = true;
+                        resultHandler.DebugMessage($"Ignoring open {order.Type} order '{string.Join(",", order.BrokerId)}' for {order.Symbol.Value} with zero quantity, please double check your holdings.");
+                    }
+                    continue;
+                }
+
                 // verify existing holding security type
                 Security security;
                 if (!GetOrAddUnrequestedSecurity(algorithm, order.Symbol, order.SecurityType, out security))

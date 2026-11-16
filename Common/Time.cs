@@ -674,7 +674,8 @@ namespace QuantConnect
                     !exchangeHours.IsDateOpen(current) ||
                     // we round down, because data for today isn't ready/wont pass through current time.
                     // for example, for equities, current time is 3pm, 1 bar in daily should be yesterdays, today does not count
-                    exchangeHours.GetNextMarketClose(current.Date, extendedMarketHours) > current)
+                    // markets with a lunch break complete their daily bar at the last close
+                    exchangeHours.GetLastDailyMarketClose(current.Date, extendedMarketHours) > current)
                 {
                     current = end.RoundDownInTimeZone(barSize, exchangeHours.TimeZone, dataTimeZone);
                 }
@@ -814,7 +815,7 @@ namespace QuantConnect
         /// Normalizes the step size as a percentage of the period.
         /// </summary>
         /// <param name="period">The period to normalize against</param>
-        /// <param name="stepSize">The step size to be normaized</param>
+        /// <param name="stepSize">The step size to be normalized</param>
         /// <returns>The normalized step size as a percentage of the period</returns>
         public static double NormalizeTimeStep(TimeSpan period, TimeSpan stepSize)
         {

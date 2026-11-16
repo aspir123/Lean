@@ -14,10 +14,12 @@
 */
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 using NUnit.Framework;
 using QuantConnect.Configuration;
 using QuantConnect.Securities;
@@ -28,6 +30,13 @@ namespace QuantConnect.Tests.Common.Securities
     [TestFixture]
     public class MarketHoursDatabaseTests
     {
+        /// <summary>
+        /// Entries written before this year still carry early closes and late opens on days the
+        /// exchange never trades, so <see cref="EarlyClosesAndLateOpensFallOnTradingDays"/> only
+        /// sweeps the years built under that rule.
+        /// </summary>
+        private const int FirstAuditedCalendarYear = 2026;
+
         [SetUp]
         public void Setup()
         {
@@ -128,6 +137,36 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(earlyCloseTime, equityHours.EarlyCloses[date]);
         }
 
+        [Test]
+        public void CorrectlyReadsUsEquity2028SpecialHours()
+        {
+            var exchangeHours = MarketHoursDatabase.FromDataFolder()
+                .GetExchangeHours(Market.USA, null, SecurityType.Equity);
+
+            var holidays = new[]
+            {
+                new DateTime(2028, 1, 17),
+                new DateTime(2028, 2, 21),
+                new DateTime(2028, 4, 14),
+                new DateTime(2028, 5, 29),
+                new DateTime(2028, 6, 19),
+                new DateTime(2028, 7, 4),
+                new DateTime(2028, 9, 4),
+                new DateTime(2028, 11, 23),
+                new DateTime(2028, 12, 25)
+            };
+
+            foreach (var holiday in holidays)
+            {
+                Assert.IsTrue(exchangeHours.Holidays.Contains(holiday));
+            }
+            Assert.IsFalse(exchangeHours.Holidays.Contains(new DateTime(2028, 1, 1)));
+
+            var earlyCloseTime = new TimeSpan(13, 0, 0);
+            Assert.AreEqual(earlyCloseTime, exchangeHours.EarlyCloses[new DateTime(2028, 7, 3)]);
+            Assert.AreEqual(earlyCloseTime, exchangeHours.EarlyCloses[new DateTime(2028, 11, 24)]);
+        }
+
         [TestCase("AUP", Market.COMEX, true)]
         [TestCase("AA6", Market.NYMEX, true)]
         [TestCase("6A", Market.CME, false)]
@@ -184,6 +223,46 @@ namespace QuantConnect.Tests.Common.Securities
                 var holidays = futureEntry.ExchangeHours.Holidays;
                 Assert.IsFalse(holidays.Contains(earlyCloseDate));
             }
+        }
+
+        /// <summary>
+        /// An early close or a late open only says something about a day the exchange trades. Both get
+        /// carried from one year to the next, and carrying them by calendar date rather than by trading
+        /// day strands them on full holidays and on weekends as soon as a holiday shifts weekday.
+        /// </summary>
+        [Test]
+        public void EarlyClosesAndLateOpensFallOnTradingDays()
+        {
+            var provider = MarketHoursDatabase.FromDataFolder();
+            var failures = new List<string>();
+
+            foreach (var (key, entry) in provider.ExchangeHoursListing)
+            {
+                var exchangeHours = entry.ExchangeHours;
+                var dateSets = new[]
+                {
+                    ("early close", exchangeHours.EarlyCloses.Keys.AsEnumerable()),
+                    ("late open", exchangeHours.LateOpens.Keys.AsEnumerable())
+                };
+
+                foreach (var (name, dates) in dateSets)
+                {
+                    foreach (var date in dates.Where(date => date.Year >= FirstAuditedCalendarYear))
+                    {
+                        if (exchangeHours.Holidays.Contains(date))
+                        {
+                            failures.Add($"{key}: {name} on {date:d} is also a holiday");
+                        }
+                        else if (exchangeHours.MarketHours.TryGetValue(date.DayOfWeek, out var localMarketHours)
+                            && localMarketHours.IsClosedAllDay)
+                        {
+                            failures.Add($"{key}: {name} on {date:d} is a {date.DayOfWeek}, which never trades");
+                        }
+                    }
+                }
+            }
+
+            Assert.IsEmpty(failures, string.Join(Environment.NewLine, failures));
         }
 
         [TestCase("BIO", Market.CME, true)]
@@ -402,6 +481,80 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(underlyingEntry.ExchangeHours.EarlyCloses, optionEntry.ExchangeHours.EarlyCloses);
         }
 
+        [TestCase("NDX", SecurityType.Index, "America/New_York", 13)]
+        [TestCase("NDX", SecurityType.IndexOption, "America/New_York", 13)]
+        [TestCase("NDXP", SecurityType.IndexOption, "America/New_York", 13)]
+        [TestCase("NQX", SecurityType.IndexOption, "America/New_York", 13)]
+        [TestCase("SPX", SecurityType.Index, "America/Chicago", 12)]
+        [TestCase("SPX", SecurityType.IndexOption, "America/Chicago", 12)]
+        [TestCase("SPXW", SecurityType.IndexOption, "America/Chicago", 12)]
+        public void USIndexInheritedEarlyClosesKeepTheirInstant(string ticker, SecurityType securityType, string timeZone, int earlyCloseHour)
+        {
+            var date = new DateTime(2025, 11, 28);
+            var symbol = Symbol.Create(OptionSymbol.MapToUnderlying(ticker, securityType), SecurityType.Index, Market.USA);
+            if (securityType == SecurityType.IndexOption)
+            {
+                symbol = Symbol.CreateOption(symbol, ticker, Market.USA, OptionStyle.European, OptionRight.Call, 200m, date);
+            }
+
+            var exchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, symbol, securityType);
+
+            Assert.AreEqual(timeZone, exchangeHours.TimeZone.Id);
+            Assert.AreEqual(new TimeSpan(earlyCloseHour, 0, 0), exchangeHours.EarlyCloses[date]);
+            Assert.AreEqual(date.AddHours(earlyCloseHour), exchangeHours.GetLastDailyMarketClose(date, false));
+        }
+
+        [Test]
+        public void InheritedEarlyClosesAndLateOpensAreConvertedToTheExchangeTimeZone()
+        {
+            var json = @"{
+  ""entries"": {
+    ""Index-usa-[*]"": {
+      ""dataTimeZone"": ""America/Chicago"", ""exchangeTimeZone"": ""America/Chicago"",
+      ""monday"": [], ""tuesday"": [], ""wednesday"": [], ""thursday"": [], ""friday"": [], ""saturday"": [], ""sunday"": [],
+      ""holidays"": [],
+      ""earlyCloses"": { ""11/28/2025"": ""12:00:00"", ""12/24/2025"": ""23:30:00"" },
+      ""lateOpens"": { ""11/28/2025"": ""09:30:00"" }
+    },
+    ""Index-usa-NDX"": {
+      ""dataTimeZone"": ""America/New_York"", ""exchangeTimeZone"": ""America/New_York"",
+      ""monday"": [], ""tuesday"": [], ""wednesday"": [], ""thursday"": [], ""friday"": [], ""saturday"": [], ""sunday"": [],
+      ""holidays"": []
+    },
+    ""Index-usa-TESTCHI"": {
+      ""dataTimeZone"": ""America/Chicago"", ""exchangeTimeZone"": ""America/Chicago"",
+      ""monday"": [], ""tuesday"": [], ""wednesday"": [], ""thursday"": [], ""friday"": [], ""saturday"": [], ""sunday"": [],
+      ""holidays"": []
+    },
+    ""IndexOption-usa-NDXP"": {
+      ""dataTimeZone"": ""America/Los_Angeles"", ""exchangeTimeZone"": ""America/Los_Angeles"",
+      ""monday"": [], ""tuesday"": [], ""wednesday"": [], ""thursday"": [], ""friday"": [], ""saturday"": [], ""sunday"": [],
+      ""holidays"": []
+    }
+  }
+}";
+            var database = JsonConvert.DeserializeObject<MarketHoursDatabase>(json);
+
+            var newYork = database.GetExchangeHours(Market.USA, Symbol.Create("NDX", SecurityType.Index, Market.USA), SecurityType.Index);
+            Assert.AreEqual(new TimeSpan(13, 0, 0), newYork.EarlyCloses[new DateTime(2025, 11, 28)]);
+            Assert.AreEqual(new TimeSpan(10, 30, 0), newYork.LateOpens[new DateTime(2025, 11, 28)]);
+            // 23:30 Chicago is 00:30 of the next day in New York
+            Assert.IsFalse(newYork.EarlyCloses.ContainsKey(new DateTime(2025, 12, 24)));
+            Assert.AreEqual(new TimeSpan(0, 30, 0), newYork.EarlyCloses[new DateTime(2025, 12, 25)]);
+
+            var chicago = database.GetExchangeHours(Market.USA, Symbol.Create("TESTCHI", SecurityType.Index, Market.USA), SecurityType.Index);
+            Assert.AreEqual(new TimeSpan(12, 0, 0), chicago.EarlyCloses[new DateTime(2025, 11, 28)]);
+            Assert.AreEqual(new TimeSpan(9, 30, 0), chicago.LateOpens[new DateTime(2025, 11, 28)]);
+
+            // the option inherits its New York underlying's calendar, already converted from the Chicago one
+            var underlying = Symbol.Create("NDX", SecurityType.Index, Market.USA);
+            var option = Symbol.CreateOption(underlying, "NDXP", Market.USA, OptionStyle.European, OptionRight.Call, 200m, new DateTime(2025, 11, 28));
+            var losAngeles = database.GetExchangeHours(Market.USA, option, SecurityType.IndexOption);
+            Assert.AreEqual(new TimeSpan(10, 0, 0), losAngeles.EarlyCloses[new DateTime(2025, 11, 28)]);
+            Assert.AreEqual(new TimeSpan(7, 30, 0), losAngeles.LateOpens[new DateTime(2025, 11, 28)]);
+            Assert.AreEqual(new TimeSpan(21, 30, 0), losAngeles.EarlyCloses[new DateTime(2025, 12, 24)]);
+        }
+
         [TestCase("GC", Market.COMEX, "OG")]
         [TestCase("SI", Market.COMEX, "SO")]
         [TestCase("HG", Market.COMEX, "HXE")]
@@ -458,6 +611,66 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.DoesNotThrow(() => database.UpdateDataFolderDatabase());
             Assert.IsTrue(database.TryGetEntry(Market.USA, ticker, securityType, out returnedEntry));
             Assert.AreEqual(returnedEntry, entry);
+        }
+
+        [TestCase("VIX9D")]
+        [TestCase("VIX6M")]
+        [TestCase("VIX1D")]
+        [TestCase("VIX1Y")]
+        [TestCase("VVIX")]
+        [TestCase("RVX")]
+        [TestCase("VXN")]
+        [TestCase("VXD")]
+        [TestCase("VWA")]
+        [TestCase("VWB")]
+        [TestCase("VXTH")]
+        [TestCase("COR1M")]
+        [TestCase("COR3M")]
+        [TestCase("COR6M")]
+        [TestCase("COR9M")]
+        [TestCase("COR1Y")]
+        [TestCase("COR30D")]
+        [TestCase("BXD")]
+        [TestCase("BXM")]
+        [TestCase("BXN")]
+        [TestCase("CLL")]
+        [TestCase("VIX3M")]
+        [TestCase("VIF")]
+        [TestCase("VIN")]
+        public void CorrectlyReadsCboeIndexMarketClose(string ticker)
+        {
+            var db = MarketHoursDatabase.FromDataFolder();
+            var exchangeHours = db.GetExchangeHours(Market.USA, Symbol.Create(ticker, SecurityType.Index, Market.USA), SecurityType.Index);
+
+            // Cboe's regular session for these indices ends at 16:15 ET, like VIX and SPX
+            var date = new DateTime(2026, 9, 17);
+            Assert.AreEqual(date.AddHours(8.5), exchangeHours.GetNextMarketOpen(date, false));
+            Assert.AreEqual(date.Add(new TimeSpan(15, 15, 0)), exchangeHours.GetNextMarketClose(date, false));
+
+            // and on early close days at 13:15 ET, 15 minutes after the equity markets
+            var earlyClose = new DateTime(2025, 11, 28);
+            Assert.AreEqual(earlyClose.Add(new TimeSpan(12, 15, 0)), exchangeHours.GetNextMarketClose(earlyClose, false));
+        }
+
+        [TestCase("VIX3M")]
+        [TestCase("VVIX")]
+        [TestCase("TESTIDX")]
+        public void CorrectlyReadsCBOEIndexMarketHours(string ticker)
+        {
+            var db = MarketHoursDatabase.FromDataFolder();
+            var symbol = Symbol.Create(ticker, SecurityType.Index, Market.CBOE);
+
+            Assert.IsTrue(db.TryGetEntry(Market.CBOE, symbol, SecurityType.Index, out var entry));
+            Assert.AreEqual(TimeZones.Chicago, entry.ExchangeHours.TimeZone);
+            Assert.AreEqual(TimeZones.NewYork, entry.DataTimeZone);
+
+            var weekdays = new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday };
+            foreach (var day in weekdays)
+            {
+                var marketSegment = entry.ExchangeHours.MarketHours[day].Segments.First(s => s.State == MarketHoursState.Market);
+                Assert.AreEqual(new TimeSpan(8, 30, 0), marketSegment.Start);
+                Assert.AreEqual(new TimeSpan(15, 15, 0), marketSegment.End);
+            }
         }
 
         [Test]

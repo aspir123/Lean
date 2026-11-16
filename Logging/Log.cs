@@ -14,8 +14,10 @@
 */
 
 using System;
+using System.Buffers;
 using System.Collections;
 using System.Globalization;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -27,12 +29,28 @@ namespace QuantConnect.Logging
     /// </summary>
     public static class Log
     {
+        private static readonly SearchValues<char> ReportCsvEscapedChars = SearchValues.Create("\",");
         private static readonly Regex LeanPathRegex = new Regex("(?:\\S*?\\\\pythonnet\\\\)|(?:\\S*?\\\\Lean\\\\)|(?:\\S*?/Lean/)|(?:\\S*?/pythonnet/)", RegexOptions.Compiled);
         private static string _lastTraceText = "";
         private static string _lastErrorText = "";
         private static bool _debuggingEnabled;
         private static int _level = 1;
         private static ILogHandler _logHandler = new ConsoleLogHandler();
+
+        /// <summary>
+        /// Gets the job user id
+        /// </summary>
+        public static int UserId { get; private set; }
+
+        /// <summary>
+        /// Gets the ob project id
+        /// </summary>
+        public static int ProjectId { get; private set; }
+
+        /// <summary>
+        /// Gets the job id (algorithm, live or optimization id)
+        /// </summary>
+        public static string JobId { get; private set; }
 
         /// <summary>
         /// Gets or sets the ILogHandler instance used as the global logging implementation.
@@ -68,6 +86,16 @@ namespace QuantConnect.Logging
         }
 
         /// <summary>
+        /// Initialized the Log class
+        /// </summary>
+        public static void Initialize(int userId, int projectId, string jobId)
+        {
+            UserId = userId;
+            ProjectId = projectId;
+            JobId = jobId;
+        }
+
+        /// <summary>
         /// Log error
         /// </summary>
         /// <param name="error">String Error</param>
@@ -87,11 +115,11 @@ namespace QuantConnect.Logging
         }
 
         /// <summary>
-        /// Log error. This overload is usefull when exceptions are being thrown from within an anonymous function.
+        /// Log error. This overload is useful when exceptions are being thrown from within an anonymous function.
         /// </summary>
         /// <param name="method">The method identifier to be used</param>
         /// <param name="exception">The exception to be logged</param>
-        /// <param name="message">An optional message to be logged, if null/whitespace the messge text will be extracted</param>
+        /// <param name="message">An optional message to be logged, if null/whitespace the message text will be extracted</param>
         /// <param name="overrideMessageFloodProtection">Force sending a message, overriding the "do not flood" directive</param>
         private static void Error(string method, Exception exception, string message = null, bool overrideMessageFloodProtection = false)
         {
@@ -103,7 +131,7 @@ namespace QuantConnect.Logging
         /// Log error
         /// </summary>
         /// <param name="exception">The exception to be logged</param>
-        /// <param name="message">An optional message to be logged, if null/whitespace the messge text will be extracted</param>
+        /// <param name="message">An optional message to be logged, if null/whitespace the message text will be extracted</param>
         /// <param name="overrideMessageFloodProtection">Force sending a message, overriding the "do not flood" directive</param>
         [MethodImpl(MethodImplOptions.NoInlining)]
         public static void Error(Exception exception, string message = null, bool overrideMessageFloodProtection = false)
@@ -160,6 +188,31 @@ namespace QuantConnect.Logging
             {
                 Console.WriteLine("Log.Debug(): Error writing debug: " + err.Message);
             }
+        }
+
+        /// <summary>
+        /// Output report log to the console
+        /// </summary>
+        /// <param name="text">The message to write</param>
+        public static void Report(string text)
+        {
+            try
+            {
+                _logHandler.Report(text);
+            }
+            catch (Exception err)
+            {
+                Console.WriteLine("Log.Report(): Error writing report: " + err.Message);
+            }
+        }
+
+        /// <summary>
+        /// Output report log to the console
+        /// </summary>
+        /// <param name="args">Values to write as csv line</param>
+        public static void Report(params object[] args)
+        {
+            Report($"{UserId},{ProjectId},{JobId},{string.Join(",", args.Select(x => x is string s && s.IndexOfAny(ReportCsvEscapedChars) >= 0 ? $"\"{s}\"" : x))}");
         }
 
         /// <summary>

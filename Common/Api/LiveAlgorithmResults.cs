@@ -32,7 +32,7 @@ namespace QuantConnect.Api
         public string Message { get; set; }
 
         /// <summary>
-        /// Indicates the status of the algorihtm, i.e. 'Running', 'Stopped'
+        /// Indicates the status of the algorithm, i.e. 'Running', 'Stopped'
         /// </summary>
         public string Status { get; set; }
 
@@ -72,6 +72,11 @@ namespace QuantConnect.Api
         public string ProjectName { get; set; }
 
         /// <summary>
+        /// Description of the project the live algorithm is in
+        /// </summary>
+        public string Description { get; set; }
+
+        /// <summary>
         /// Name of the data center where the algorithm is physically located.
         /// </summary>
         public string Datacenter { get; set; }
@@ -93,10 +98,23 @@ namespace QuantConnect.Api
         public IDictionary<string, string> RuntimeStatistics { get; set; }
 
         /// <summary>
+        /// Server status information, including CPU/RAM usage, etc...
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public IDictionary<string, string> ServerStatistics { get; set; }
+
+        /// <summary>
         /// Charts updates for the live algorithm since the last result packet
         /// </summary>
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public IDictionary<string, Chart> Charts { get; set; }
+
+        /// <summary>
+        /// Deployment details shared by the brokerage, data queue handler or any other component,
+        /// for example account information. Null when the deployment reported none
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public IDictionary<string, string> DeploymentDetails { get; set; }
     }
 
     /// <summary>

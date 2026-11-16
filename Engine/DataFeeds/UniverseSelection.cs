@@ -17,6 +17,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using QuantConnect.Benchmarks;
+using QuantConnect.Configuration;
 using QuantConnect.Data;
 using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Interfaces;
@@ -42,6 +43,23 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         private bool _initializedSecurityBenchmark;
         private bool _anyDoesNotHaveFundamentalDataWarningLogged;
         private readonly SecurityChangesConstructor _securityChangesConstructor;
+        private bool _universeSelectionSizeWarningSent;
+        private DateTime _nextPendingDelistedRemovalsCheck;
+        // a selection must be at least 1/N of its resolution threshold before the large selection check runs
+        private const int MinimumSignificantSelectionRatio = 10;
+        private static readonly int SelectionSizeWarningResolutionCount = Enum.GetValues<Resolution>().Length;
+        // the cost of a selected symbol grows with the resolution its subscriptions are added at,
+        // so the warning threshold is defined per resolution instead of as a single flat count
+        private readonly Dictionary<Resolution, int> _universeSelectionSizeWarningThresholds = Config.GetValue(
+            "universe-selection-size-warning-thresholds",
+            new Dictionary<Resolution, int>
+            {
+                { Resolution.Tick, 100 },
+                { Resolution.Second, 500 },
+                { Resolution.Minute, 1000 },
+                { Resolution.Hour, 2000 },
+                { Resolution.Daily, 4000 },
+            });
 
         /// <summary>
         /// Initializes a new instance of the <see cref="UniverseSelection"/> class
@@ -128,7 +146,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
                     // if the input is already fundamental data we just need to filter it and pass it through
                     var hasFundamentalData = universeData.Data.Count > 0 && universeData.Data[0] is Fundamental;
-                    if(hasFundamentalData)
+                    if (hasFundamentalData)
                     {
                         // Remove selected symbols that does not have fine fundamental data
                         var anyDoesNotHaveFundamentalData = false;
@@ -137,7 +155,8 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                         // which do not use coarse data as underlying, in which case it could happen that we try to load fine fundamental data that is missing, but no problem,
                         // 'FineFundamentalSubscriptionEnumeratorFactory' won't emit it
                         var set = selectSymbolsResult.ToHashSet();
-                        fineCollection.Data.AddRange(universeData.Data.OfType<Fundamental>().Where(fundamental => {
+                        fineCollection.Data.AddRange(universeData.Data.OfType<Fundamental>().Where(fundamental =>
+                        {
                             // we remove to we distict by symbol
                             if (set.Remove(fundamental.Symbol))
                             {
@@ -163,7 +182,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                         var currentTime = dateTimeUtc.ConvertFromUtc(TimeZones.NewYork);
                         foreach (var symbol in selectSymbolsResult)
                         {
-                            fineCollection.Data.Add(new Fundamental(currentTime, symbol));
+                            fineCollection.Data.Add(Fundamental.ForDate(currentTime.Date, symbol));
                         }
                     }
 
@@ -182,6 +201,8 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             {
                 // materialize the enumerable into a set for processing
                 universe.Selected = selectSymbolsResult.ToHashSet();
+
+                WarnOnLargeUniverseSelection(universe);
             }
 
             // first check for no pending removals, even if the universe selection
@@ -190,6 +211,28 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 _pendingRemovalsManager.CheckPendingRemovals(universe.Selected, universe),
                 dateTimeUtc,
                 algorithmEndDateUtc);
+
+            // a user defined universe member stays selected when it gets a new resolution or is removed and re-added in the same time step,
+            // so we update its data subscriptions here, the unchanged check below and the new selections loop would skip it
+            if (universe is UserDefinedUniverse userDefinedUniverse
+                && userDefinedUniverse.TryTakeChangedMembers(out var changedMembers, out var replacedConfigs))
+            {
+                foreach (var config in replacedConfigs)
+                {
+                    if (universe.Securities.TryGetValue(config.Symbol, out var member) && _dataManager.RemoveSubscription(config, universe))
+                    {
+                        _internalSubscriptionManager.RemovedSubscriptionRequest(
+                            new SubscriptionRequest(false, universe, member.Security, config, dateTimeUtc, algorithmEndDateUtc));
+                    }
+                }
+                foreach (var symbol in changedMembers)
+                {
+                    if (universe.Securities.TryGetValue(symbol, out var member))
+                    {
+                        AddSubscriptions(universe, member.Security, dateTimeUtc, algorithmEndDateUtc, out _, out _);
+                    }
+                }
+            }
 
             // check for no changes second
             if (ReferenceEquals(selectSymbolsResult, Universe.Unchanged))
@@ -238,6 +281,12 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     continue;
                 }
 
+                if (_algorithm.Securities.TryGetValue(symbol, out var existingSecurity) && existingSecurity.IsDelisted)
+                {
+                    // a delisted security can't be added again, like when still selected by a user defined universe in live trading
+                    continue;
+                }
+
                 Security underlying = null;
                 if (symbol.HasUnderlying)
                 {
@@ -246,46 +295,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 // create the new security, the algorithm thread will add this at the appropriate time
                 var security = GetOrCreateSecurity(pendingAdditions, symbol, universe.UniverseSettings, underlying);
 
-                var addedSubscription = false;
-                var dataFeedAdded = false;
-                var internalFeed = true;
-                foreach (var request in universe.GetSubscriptionRequests(security, dateTimeUtc, algorithmEndDateUtc,
-                                                                         _algorithm.SubscriptionManager.SubscriptionDataConfigService))
-                {
-                    if (!request.TradableDaysInDataTimeZone.Any())
-                    {
-                        // Remove the config from the data manager. universe.GetSubscriptionRequests() might have added the configs
-                        _dataManager.RemoveSubscription(request.Configuration, universe);
-                        continue;
-                    }
-
-                    if (security.Symbol == request.Configuration.Symbol // Just in case check its the same symbol, else AddData will throw.
-                        && !security.Subscriptions.Contains(request.Configuration))
-                    {
-                        // For now this is required for retro compatibility with usages of security.Subscriptions
-                        security.AddData(request.Configuration);
-                    }
-
-                    var toRemove = _currencySubscriptionDataConfigManager.GetSubscriptionDataConfigToRemove(request.Configuration.Symbol);
-                    if (toRemove != null)
-                    {
-                        Log.Trace($"UniverseSelection.ApplyUniverseSelection(): Removing internal currency data feed {toRemove}");
-                        _dataManager.RemoveSubscription(toRemove);
-                    }
-
-                    // 'dataFeedAdded' will help us notify the user for security changes only once per non internal subscription
-                    // for example two universes adding the sample configuration, we don't want two notifications
-                    dataFeedAdded = _dataManager.AddSubscription(request);
-
-                    // only update our security changes if we actually added data
-                    if (!request.IsUniverseSubscription)
-                    {
-                        addedSubscription = true;
-                        // if any config isn't internal then it's not internal
-                        internalFeed &= request.Configuration.IsInternalFeed;
-                        _internalSubscriptionManager.AddedSubscriptionRequest(request);
-                    }
-                }
+                var addedSubscription = AddSubscriptions(universe, security, dateTimeUtc, algorithmEndDateUtc, out var dataFeedAdded, out var internalFeed);
 
                 if (addedSubscription)
                 {
@@ -360,7 +370,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                         resolution = supportedResolutions.OrderByDescending(x => x).First();
                     }
 
-                    var subscriptionList = new List<Tuple<Type, TickType>>() {subscriptionType};
+                    var subscriptionList = new List<Tuple<Type, TickType>>() { subscriptionType };
                     var dataConfig = _algorithm.SubscriptionManager.SubscriptionDataConfigService.Add(
                         securityBenchmark.Security.Symbol,
                         resolution,
@@ -418,9 +428,32 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <summary>
         /// Checks the current subscriptions and adds necessary currency pair feeds to provide real time conversion data
         /// </summary>
-        public void EnsureCurrencyDataFeeds(SecurityChanges securityChanges)
+        /// <param name="securityChanges">The security changes to consume</param>
+        /// <param name="seedNewCurrencies">Whether to seed the conversion rate of newly added currencies with their last
+        /// known price. The setup handler passes false because it performs its own (optionally white-listed) seeding</param>
+        public void EnsureCurrencyDataFeeds(SecurityChanges securityChanges, bool seedNewCurrencies = true)
         {
-            _currencySubscriptionDataConfigManager.EnsureCurrencySubscriptionDataConfigs(securityChanges, _algorithm.BrokerageModel);
+            var newCurrenciesAdded = _currencySubscriptionDataConfigManager.EnsureCurrencySubscriptionDataConfigs(securityChanges, _algorithm.BrokerageModel);
+
+            // Only scan the cashbook and seed when a new currency was actually introduced, either as a new
+            // internal conversion feed or as a new cash entry whose conversion security is an already added one
+            if (!seedNewCurrencies || !newCurrenciesAdded)
+            {
+                return;
+            }
+
+            // Seed the new conversion rates with their last known price so they are non-zero right away, instead of
+            // waiting for the first conversion pair bar to arrive. Otherwise a conversion needed in that gap would
+            // throw. This is the same thing BaseSetupHandler does during setup, but for cashes added at runtime.
+            try
+            {
+                AlgorithmUtils.SeedCurrencyConversionRates(_algorithm);
+            }
+            catch (Exception err)
+            {
+                // Seeding must never break the algorithm, the rate will be set on the first conversion pair bar
+                Log.Error($"UniverseSelection.EnsureCurrencyDataFeeds(): failed to seed runtime currency conversion rate(s): {err.Message}");
+            }
         }
 
         /// <summary>
@@ -434,7 +467,12 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 security.IsDelisted = true;
                 security.Reset();
 
-                _algorithm.Securities.Remove(data.Symbol);
+                // keep it until it's safe to remove it, its delisting liquidation and the settlement of its funds
+                // still need it, see CheckPendingDelistedRemovals
+                if (_pendingRemovalsManager.TryRemoveDelisted(security))
+                {
+                    _algorithm.Securities.Remove(data.Symbol);
+                }
 
                 // Add the security removal to the security changes but only if not pending for removal.
                 // If pending, the removed change event was already emitted for this security
@@ -447,6 +485,175 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             }
 
             return SecurityChanges.None;
+        }
+
+        /// <summary>
+        /// Removes the delisted securities which are now safe to remove from the algorithm and their universes,
+        /// checked hourly like the cash settlement
+        /// </summary>
+        /// <param name="dateTimeUtc">The current utc time</param>
+        public void CheckPendingDelistedRemovals(DateTime dateTimeUtc)
+        {
+            if (dateTimeUtc < _nextPendingDelistedRemovalsCheck)
+            {
+                return;
+            }
+            _nextPendingDelistedRemovalsCheck = dateTimeUtc.RoundDown(Time.OneHour) + Time.OneHour;
+
+            var removedSecurities = _pendingRemovalsManager.CheckPendingDelistedRemovals();
+            if (removedSecurities == null)
+            {
+                return;
+            }
+
+            foreach (var security in removedSecurities)
+            {
+                // a delisted security can't be selected again and its subscriptions already ended with its data
+                foreach (var universe in _algorithm.UniverseManager.Values)
+                {
+                    universe.RemoveMember(dateTimeUtc, security);
+                }
+                _algorithm.Securities.Remove(security.Symbol);
+            }
+        }
+
+        /// <summary>
+        /// Warns once per algorithm when universe selections grow past the per-resolution symbol thresholds in
+        /// 'universe-selection-size-warning-thresholds', a recurring cause of out of memory kills and stalls.
+        /// All universes consume a single shared subscription budget: each resolution's threshold defines the
+        /// full budget for symbols subscribed at that resolution, and each universe consumes a fraction of it,
+        /// so load still accumulates across universes of different resolutions.
+        /// Warn only, never fail: the run may still succeed
+        /// </summary>
+        internal void WarnOnLargeUniverseSelection(Universe universe)
+        {
+            try
+            {
+                if (_universeSelectionSizeWarningSent || universe.Selected == null)
+                {
+                    return;
+                }
+
+                // skip small selections: only a selection that is itself a meaningful share of its
+                // threshold can tip the shared budget, so don't aggregate across all universes for every one
+                if (!TryGetSizeWarningThreshold(universe, out _, out var universeThreshold)
+                    || universe.Selected.Count * MinimumSignificantSelectionRatio < universeThreshold)
+                {
+                    return;
+                }
+
+                var load = 0d;
+                var universeCount = 0;
+                // per resolution symbol counts, indexed by the resolution enum value
+                Span<int> selectedByResolution = stackalloc int[SelectionSizeWarningResolutionCount];
+
+                foreach (var kvp in _algorithm.UniverseManager)
+                {
+                    Accumulate(kvp.Value, ref load, ref universeCount, selectedByResolution);
+                }
+
+                if (load < 1)
+                {
+                    return;
+                }
+
+                _universeSelectionSizeWarningSent = true;
+                var counts = new List<string>();
+                for (var i = 0; i < selectedByResolution.Length; i++)
+                {
+                    if (selectedByResolution[i] > 0)
+                    {
+                        counts.Add($"~{selectedByResolution[i]} symbols at {(Resolution)i} resolution");
+                    }
+                }
+                var suggestion = universe is OptionChainUniverse
+                    ? "Narrow the filter (SetFilter/set_filter) or add specific contracts (AddOptionContract/add_option_contract)."
+                    : "Select fewer symbols or use a coarser universe resolution (UniverseSettings.Resolution/universe_settings.resolution).";
+                _algorithm.Debug($"Warning: universe selections have reached {string.Join(" and ", counts)} across {universeCount} universe(s)," +
+                    $" latest: {universe.Selected.Count} from {universe.Configuration.Symbol.Value}. Each selected symbol adds data" +
+                    $" subscriptions, increasing time and memory usage. {suggestion}");
+            }
+            catch (Exception exception)
+            {
+                // diagnostics must never interfere with the algorithm: log, disable and move on
+                _universeSelectionSizeWarningSent = true;
+                Log.Error(exception);
+            }
+        }
+
+        /// <summary>
+        /// Adds a universe's selection to the shared budget load and per resolution symbol counts
+        /// </summary>
+        private void Accumulate(Universe universe, ref double load, ref int universeCount, Span<int> selectedByResolution)
+        {
+            if (universe.Selected == null || !TryGetSizeWarningThreshold(universe, out var resolution, out var threshold))
+            {
+                return;
+            }
+            var selectionSize = universe.Selected.Count;
+            load += selectionSize / (double)threshold;
+            universeCount++;
+            selectedByResolution[(int)resolution] += selectionSize;
+        }
+
+        /// <summary>
+        /// Gets the selection size warning threshold for the resolution the universe's members subscribe at.
+        /// False when warnings are disabled for it
+        /// </summary>
+        private bool TryGetSizeWarningThreshold(Universe universe, out Resolution resolution, out int threshold)
+        {
+            resolution = universe.UniverseSettings.Resolution;
+            return _universeSelectionSizeWarningThresholds.TryGetValue(resolution, out threshold) && threshold > 0;
+        }
+
+        /// <summary>
+        /// Adds the data subscriptions the universe requests for the given security
+        /// </summary>
+        /// <returns>True if any non universe subscription was requested</returns>
+        private bool AddSubscriptions(Universe universe, Security security, DateTime dateTimeUtc, DateTime algorithmEndDateUtc,
+            out bool dataFeedAdded, out bool internalFeed)
+        {
+            var addedSubscription = false;
+            dataFeedAdded = false;
+            internalFeed = true;
+            foreach (var request in universe.GetSubscriptionRequests(security, dateTimeUtc, algorithmEndDateUtc,
+                                                                     _algorithm.SubscriptionManager.SubscriptionDataConfigService))
+            {
+                if (!request.TradableDaysInDataTimeZone.Any())
+                {
+                    // Remove the config from the data manager. universe.GetSubscriptionRequests() might have added the configs
+                    _dataManager.RemoveSubscription(request.Configuration, universe);
+                    continue;
+                }
+
+                if (security.Symbol == request.Configuration.Symbol // Just in case check its the same symbol, else AddData will throw.
+                    && !security.Subscriptions.Contains(request.Configuration))
+                {
+                    // For now this is required for retro compatibility with usages of security.Subscriptions
+                    security.AddData(request.Configuration);
+                }
+
+                var toRemove = _currencySubscriptionDataConfigManager.GetSubscriptionDataConfigToRemove(request.Configuration.Symbol);
+                if (toRemove != null)
+                {
+                    Log.Trace($"UniverseSelection.ApplyUniverseSelection(): Removing internal currency data feed {toRemove}");
+                    _dataManager.RemoveSubscription(toRemove);
+                }
+
+                // 'dataFeedAdded' will help us notify the user for security changes only once per non internal subscription
+                // for example two universes adding the sample configuration, we don't want two notifications
+                dataFeedAdded = _dataManager.AddSubscription(request);
+
+                // only update our security changes if we actually added data
+                if (!request.IsUniverseSubscription)
+                {
+                    addedSubscription = true;
+                    // if any config isn't internal then it's not internal
+                    internalFeed &= request.Configuration.IsInternalFeed;
+                    _internalSubscriptionManager.AddedSubscriptionRequest(request);
+                }
+            }
+            return addedSubscription;
         }
 
         private void RemoveSecurityFromUniverse(

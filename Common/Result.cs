@@ -73,7 +73,7 @@ namespace QuantConnect
         public IDictionary<string, string> State { get; set; }
 
         /// <summary>
-        /// Server status information, including CPU/RAM usage, ect...
+        /// Server status information, including CPU/RAM usage, etc...
         /// </summary>
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public IDictionary<string, string> ServerStatistics { get; set; }
@@ -118,6 +118,7 @@ namespace QuantConnect
             State = parameters.State;
             TotalPerformance = parameters.TotalPerformance;
             Analysis = parameters.Analysis;
+            ServerStatistics = parameters.ServerStatistics;
         }
     }
 }

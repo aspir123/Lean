@@ -279,18 +279,23 @@ namespace QuantConnect.Securities
         /// <param name="symbol">Key.</param>
         public override bool ContainsKey(string symbol)
         {
-            return _currencies.ContainsKey(symbol);
+            return !ReferenceEquals(symbol, null) && _currencies.ContainsKey(symbol);
         }
 
         /// <summary>
         /// Try to get the value.
         /// </summary>
         /// <remarks>To be added.</remarks>
-        /// <returns><c>true</c>, if get value was tryed, <c>false</c> otherwise.</returns>
+        /// <returns><c>true</c>, if get value was tried, <c>false</c> otherwise.</returns>
         /// <param name="symbol">The symbol.</param>
         /// <param name="value">Value.</param>
         public override bool TryGetValue(string symbol, out Cash value)
         {
+            if (ReferenceEquals(symbol, null))
+            {
+                value = null;
+                return false;
+            }
             return _currencies.TryGetValue(symbol, out value);
         }
 

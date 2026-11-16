@@ -94,8 +94,9 @@ namespace QuantConnect.Tests.Engine.Setup
                 Assert.AreEqual(OrderStatus.Submitted, order.Status);
             }
 
-            // Warn the user about each open order
-            Assert.AreEqual(_resultHandler.PersistentMessages.Count, 4);
+            // Warn the user about each open order, plus a single warning for the two zero quantity orders
+            Assert.AreEqual(_resultHandler.PersistentMessages.Count, 5);
+            Assert.AreEqual(1, _resultHandler.PersistentMessages.Count(x => ((DebugPacket)x).Message.Contains("zero quantity", StringComparison.InvariantCulture)));
 
             // Market order
             Assert.AreEqual(_transactionHandler.OrderTickets.First(x => x.Value.OrderType == OrderType.Market).Value.Quantity, 100);
@@ -369,6 +370,39 @@ namespace QuantConnect.Tests.Engine.Setup
             setupHandler.DisposeSafely();
             Assert.AreEqual(1, setupHandler.Errors.Count);
             Assert.IsTrue(setupHandler.Errors[0].InnerException.Message.Equals("Some failure"));
+        }
+
+        [Test]
+        public void SetsAlgorithmTimeBeforeConnectingToBrokerage()
+        {
+            var algorithm = new TestAlgorithm();
+            algorithm.SetHistoryProvider(new BrokerageTransactionHandlerTests.BrokerageTransactionHandlerTests.EmptyHistoryProvider());
+            var job = GetJob();
+
+            var resultHandler = new Mock<IResultHandler>();
+            var transactionHandler = new Mock<ITransactionHandler>();
+            var realTimeHandler = new Mock<IRealTimeHandler>();
+            var brokerage = new Mock<IBrokerage>();
+
+            var timeAtConnect = DateTime.MinValue;
+            brokerage.Setup(x => x.Connect()).Callback(() => timeAtConnect = algorithm.UtcTime);
+            brokerage.Setup(x => x.IsConnected).Returns(true);
+            brokerage.Setup(x => x.AccountBaseCurrency).Returns(Currencies.USD);
+            brokerage.Setup(x => x.GetCashBalance()).Returns(new List<CashAmount>());
+            brokerage.Setup(x => x.GetAccountHoldings()).Returns(new List<Holding>());
+            brokerage.Setup(x => x.GetOpenOrders()).Returns(new List<Order>());
+
+            using var setupHandler = new BrokerageSetupHandler();
+            IBrokerageFactory factory;
+            setupHandler.CreateBrokerage(job, algorithm, out factory);
+            factory.Dispose();
+
+            var beforeSetup = DateTime.UtcNow;
+            Assert.IsTrue(setupHandler.Setup(new SetupHandlerParameters(_dataManager.UniverseSelection, algorithm, brokerage.Object, job, resultHandler.Object,
+                transactionHandler.Object, realTimeHandler.Object, TestGlobals.DataCacheProvider, TestGlobals.MapFileProvider)));
+
+            Assert.GreaterOrEqual(timeAtConnect, beforeSetup);
+            Assert.LessOrEqual(timeAtConnect, DateTime.UtcNow);
         }
 
         [Test]
@@ -965,7 +999,10 @@ namespace QuantConnect.Tests.Engine.Setup
                 marketOrderWithPrice,
                 new LimitOrder(Symbols.SPY, -quantity, pricePlusDelta, time),
                 new StopMarketOrder(Symbols.SPY, quantity, pricePlusDelta, time),
-                new StopLimitOrder(Symbols.SPY, quantity, pricePlusDelta, priceMinusDelta, time)
+                new StopLimitOrder(Symbols.SPY, quantity, pricePlusDelta, priceMinusDelta, time),
+                // orders with zero quantity should be ignored, with a single user warning
+                new LimitOrder(Symbols.SPY, 0, pricePlusDelta, time) { BrokerId = new List<string> { "zero-qty-1" } },
+                new MarketOrder(Symbols.SPY, 0, time) { BrokerId = new List<string> { "zero-qty-2" } }
             };
         }
 

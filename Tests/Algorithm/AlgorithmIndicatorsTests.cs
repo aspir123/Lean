@@ -270,9 +270,110 @@ namespace QuantConnect.Tests.Algorithm
 
             var indicatorValues = _algorithm.IndicatorHistory(indicator, new[] { _equity, referenceSymbol }, TimeSpan.FromDays(50), Resolution.Daily);
             var lastPoint = indicatorValues.Last();
-            Assert.AreEqual(0.477585951081753m, lastPoint.Price);
-            Assert.AreEqual(0.477585951081753m, lastPoint.Current.Value);
+            Assert.AreEqual(0.664648990718509m, lastPoint.Price);
+            Assert.AreEqual(0.664648990718509m, lastPoint.Current.Value);
+            Assert.AreEqual(indicator.Current.Value, lastPoint.Current.Value);
             Assert.AreEqual(new DateTime(2013, 10, 10, 16, 0, 0), lastPoint.Current.EndTime);
+        }
+
+        [Test]
+        public void LeastSquaresMovingAverageWithReferenceCalculation()
+        {
+            var period = 10;
+            var referenceSymbol = Symbol.Create("IBM", SecurityType.Equity, Market.USA);
+            var indicator = new LeastSquaresMovingAverageWithReference(_equity, referenceSymbol, period);
+            _algorithm.SetDateTime(new DateTime(2013, 10, 11));
+
+            // Fit the target closes on the reference closes of the last period time steps both symbols
+            // have a price for, using the ordinary least squares closed form
+            var targetCloses = new List<double>();
+            var referenceCloses = new List<double>();
+            foreach (var slice in _algorithm.History(new[] { _equity, referenceSymbol }, TimeSpan.FromDays(50), Resolution.Daily))
+            {
+                if (slice.Bars.ContainsKey(_equity) && slice.Bars.ContainsKey(referenceSymbol))
+                {
+                    targetCloses.Add((double)slice.Bars[_equity].Close);
+                    referenceCloses.Add((double)slice.Bars[referenceSymbol].Close);
+                }
+            }
+            var target = targetCloses.TakeLast(period).ToList();
+            var reference = referenceCloses.TakeLast(period).ToList();
+            var sumX = reference.Sum();
+            var sumY = target.Sum();
+            var expectedSlope = (period * reference.Zip(target, (x, y) => x * y).Sum() - sumX * sumY)
+                / (period * reference.Sum(x => x * x) - sumX * sumX);
+            var expectedIntercept = (sumY - expectedSlope * sumX) / period;
+            var expectedValue = expectedIntercept + expectedSlope * reference[^1];
+
+            var indicatorValues = _algorithm.IndicatorHistory(indicator, new[] { _equity, referenceSymbol }, TimeSpan.FromDays(50), Resolution.Daily);
+
+            Assert.AreEqual(expectedSlope, (double)indicator.Slope.Current.Value, 1e-6);
+            Assert.AreEqual(expectedIntercept, (double)indicator.Intercept.Current.Value, 1e-6);
+            Assert.AreEqual(expectedValue, (double)indicator.Current.Value, 1e-6);
+            Assert.AreEqual(new DateTime(2013, 10, 10, 16, 0, 0), indicator.Current.EndTime);
+
+            var lastPoint = indicatorValues.Last();
+            Assert.AreEqual(new DateTime(2013, 10, 10, 16, 0, 0), lastPoint.Current.EndTime);
+            Assert.AreEqual(indicator.Current.Value, lastPoint.Current.Value);
+            Assert.AreEqual(indicator.Slope.Current.Value, lastPoint["Slope"].Value);
+        }
+
+        [Test]
+        public void MultiSymbolIndicatorHistoryMatchesSynchronizedUpdates()
+        {
+            var symbols = new[]
+            {
+                Symbol.Create("AAPL", SecurityType.Equity, Market.USA),
+                Symbol.Create("IBM", SecurityType.Equity, Market.USA)
+            };
+            var prices = new[]
+            {
+                new[] { 10m, 9.62m, 9.35m, 9.47m, 9.89m },
+                new[] { 20m, 20.95m, 20m, 20.72m, 20.28m }
+            };
+            var slices = Enumerable.Range(0, 5).Select(day =>
+            {
+                var bars = symbols.Select((symbol, i) =>
+                {
+                    var price = prices[i][day];
+                    return new TradeBar(new DateTime(2024, 1, 1).AddDays(day), symbol, price, price, price, price, 1000, TimeSpan.FromDays(1));
+                }).ToList();
+                return new Slice(bars[0].EndTime, bars, bars[0].EndTime);
+            }).ToList();
+
+            var direct = new Correlation(symbols[0], symbols[1], 3);
+            var expected = new List<IndicatorDataPoint>();
+            foreach (var slice in slices)
+            {
+                foreach (var bar in slice.Bars.Values)
+                {
+                    direct.Update(bar);
+                }
+                if (direct.IsReady)
+                {
+                    expected.Add(direct.Current);
+                }
+            }
+
+            var indicatorValues = _algorithm.IndicatorHistory(new Correlation(symbols[0], symbols[1], 3), slices);
+
+            Assert.AreEqual(3, expected.Count);
+            CollectionAssert.AreEqual(expected.Select(x => x.EndTime), indicatorValues.Select(x => x.EndTime));
+            CollectionAssert.AreEqual(expected.Select(x => x.Value), indicatorValues.Current.Select(x => x.Value));
+            CollectionAssert.AreEqual(expected.Select(x => x.Value), indicatorValues.Select(x => x.Current.Value));
+        }
+
+        [Test]
+        public void LeastSquaresMovingAverageWithReferenceIsWarmedUpByTheAlgorithm()
+        {
+            var referenceSymbol = _algorithm.AddEquity("IBM").Symbol;
+
+            var indicator = _algorithm.LSMA(_equity, referenceSymbol, 10, Resolution.Daily);
+
+            Assert.AreEqual("LSMA(10,day)", indicator.Name);
+            Assert.IsTrue(indicator.IsReady);
+            Assert.AreNotEqual(0m, indicator.Current.Value);
+            Assert.AreNotEqual(0m, indicator.Slope.Current.Value);
         }
 
         [TestCase(Language.Python)]

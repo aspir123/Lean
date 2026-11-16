@@ -14,14 +14,10 @@
 */
 
 using System;
-using QuantConnect;
-using QuantConnect.Data;
 using QuantConnect.Securities;
 using QuantConnect.Data.Market;
-using QuantConnect.Data.Consolidators;
-using QuantConnect.Util;
 
-namespace Common.Data.Consolidators
+namespace QuantConnect.Data.Consolidators
 {
     /// <summary>
     /// Consolidates intraday market data into a single daily <see cref="SessionBar"/> (OHLCV + OpenInterest).
@@ -65,6 +61,15 @@ namespace Common.Data.Consolidators
         /// <param name="data">The new data</param>
         protected override void AggregateBar(ref SessionBar workingBar, BaseData data)
         {
+            if (!_initialized)
+            {
+                if (workingBar.Time == DateTime.MaxValue || data.Time.Date > workingBar.Time.Date)
+                {
+                    workingBar.Time = data.Time.Date;
+                }
+                _initialized = true;
+            }
+
             // Handle open interest
             if (data.DataType == MarketDataType.Tick && data is Tick oiTick && oiTick.TickType == TickType.OpenInterest)
             {
@@ -80,20 +85,6 @@ namespace Common.Data.Consolidators
 
             // Update the working session bar
             workingBar.Update(data, Consolidated);
-        }
-
-        /// <summary>
-        /// Updates the session with new market data and initializes the consolidator if needed
-        /// </summary>
-        /// <param name="data">The new data to update the session with</param>
-        public override void Update(BaseData data)
-        {
-            if (!_initialized)
-            {
-                _workingBar.Time = data.Time.Date;
-                _initialized = true;
-            }
-            base.Update(data);
         }
 
         /// <summary>

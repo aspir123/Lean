@@ -113,7 +113,7 @@ namespace QuantConnect
         }
 
         /// <summary>
-        /// Indexer method for the base dictioanry to access the objects by their symbol.
+        /// Indexer method for the base dictionary to access the objects by their symbol.
         /// </summary>
         /// <remarks>IDictionary implementation</remarks>
         /// <param name="key">Key object indexer</param>
@@ -251,7 +251,7 @@ namespace QuantConnect
 
             if (IsReadOnly)
             {
-                throw new KeyNotFoundException(Messages.ExtendedDictionary.KeyNotFoundDueToNoData(this, key));
+                throw new KeyNotFoundException(Messages.ExtendedDictionary.SetDefaultKeyNotFoundDueToNoData(this, key));
             }
 
             this[key] = default_value;

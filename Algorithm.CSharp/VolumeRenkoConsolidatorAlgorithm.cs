@@ -24,7 +24,7 @@ using QuantConnect.Interfaces;
 namespace QuantConnect.Algorithm.CSharp
 {
     /// <summary>
-    /// Demostrates the use of <see cref="VolumeRenkoConsolidator"/> for creating constant volume bar
+    /// Demonstrates the use of <see cref="VolumeRenkoConsolidator"/> for creating constant volume bar
     /// </summary>
     /// <meta name="tag" content="renko" />
     /// <meta name="tag" content="using data" />
@@ -147,7 +147,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Net Profit", "-0.840%"},
             {"Sharpe Ratio", "-0.987"},
             {"Sortino Ratio", "-7.639"},
-            {"Probabilistic Sharpe Ratio", "41.344%"},
+            {"Probabilistic Sharpe Ratio", "41.222%"},
             {"Loss Rate", "87%"},
             {"Win Rate", "13%"},
             {"Profit-Loss Ratio", "5.05"},

@@ -138,7 +138,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Net Profit", "9.685%"},
             {"Sharpe Ratio", "238.834"},
             {"Sortino Ratio", "945.079"},
-            {"Probabilistic Sharpe Ratio", "81.660%"},
+            {"Probabilistic Sharpe Ratio", "81.526%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
@@ -188,7 +188,7 @@ namespace QuantConnect.Algorithm.CSharp
             /// and as such we want to know the entire time span covered
             /// </summary>
             /// <remarks>
-            /// This property is overriden to allow different values for Time and EndTime
+            /// This property is overridden to allow different values for Time and EndTime
             /// if they are set in the Reader. In the base implementation EndTime equals Time
             /// </remarks>
             public override DateTime EndTime { get; set; }
