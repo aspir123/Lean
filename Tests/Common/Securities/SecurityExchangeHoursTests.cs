@@ -33,6 +33,7 @@ namespace QuantConnect.Tests.Common.Securities
     {
         private static Lazy<HashSet<DateTime>> _mhdbUSHolidays = new Lazy<HashSet<DateTime>>(() => MarketHoursDatabase.FromDataFolder().GetEntry(Market.USA, (string)null, SecurityType.Equity).ExchangeHours.Holidays);
 
+        [Test]
         public void IsAlwaysOpen()
         {
             var cryptoMarketHourDbEntry = MarketHoursDatabase.FromDataFolder().GetEntry(Market.Coinbase, (string)null, SecurityType.Crypto);
@@ -409,6 +410,148 @@ namespace QuantConnect.Tests.Common.Securities
             var startTime = new DateTime(2022, 1, 1);
             var nextMarketOpen = exchangeHours.GetNextMarketClose(startTime, false);
             Assert.AreEqual(new DateTime(2022, 1, 3, 16, 15, 0), nextMarketOpen);
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void GetNextMarketCloseForContinuousScheduleBeforeEarlyClose(bool hasLateOpen)
+        {
+            var earlyCloseDate = new DateTime(2023, 11, 23);
+            var exchangeHours = CreateContinuousExchangeHoursWithEarlyClose(earlyCloseDate, hasLateOpen);
+
+            var nextMarketClose = exchangeHours.GetNextMarketClose(earlyCloseDate.AddDays(-1).AddHours(17), true);
+
+            Assert.AreEqual(earlyCloseDate.AddHours(12), nextMarketClose);
+        }
+
+        [Test]
+        public void ContinuousScheduleAfterEarlyCloseLateOpenContinuesAcrossMidnight()
+        {
+            var earlyCloseDate = new DateTime(2023, 11, 23);
+            var exchangeHours = CreateContinuousExchangeHoursWithEarlyClose(earlyCloseDate, hasLateOpen: true);
+            var lateOpenSessionTime = earlyCloseDate.AddHours(18);
+
+            Assert.AreEqual(earlyCloseDate.AddDays(1).AddHours(16), exchangeHours.GetNextMarketClose(lateOpenSessionTime, true));
+            Assert.AreEqual(earlyCloseDate.AddHours(17), exchangeHours.GetPreviousMarketOpen(lateOpenSessionTime, true));
+            Assert.AreEqual(earlyCloseDate.AddDays(3).AddHours(17), exchangeHours.GetNextMarketOpen(lateOpenSessionTime, true));
+        }
+
+        [Test]
+        public void GetNextMarketOpenAcrossMidnightIntoEarlyCloseLateOpenDaySkipsContinuedSession()
+        {
+            var earlyCloseDate = new DateTime(2023, 11, 23);
+            var exchangeHours = CreateContinuousExchangeHoursWithEarlyClose(earlyCloseDate, hasLateOpen: true);
+
+            Assert.AreEqual(earlyCloseDate.AddHours(17), exchangeHours.GetNextMarketOpen(earlyCloseDate.AddSeconds(1), true));
+        }
+
+        [TestCase("2024-01-08 08:00:00", "2024-01-08 09:00:00")]
+        [TestCase("2024-01-08 09:00:00", "2024-01-08 14:00:00")]
+        [TestCase("2024-01-08 10:00:00", "2024-01-08 14:00:00")]
+        [TestCase("2024-01-08 12:30:00", "2024-01-08 14:00:00")]
+        [TestCase("2024-01-08 14:00:00", "2024-01-09 09:00:00")]
+        [TestCase("2024-01-08 15:00:00", "2024-01-09 09:00:00")]
+        public void GetNextMarketOpenFindsLaterSessionOnSameDay(string startTime, string expectedNextMarketOpen)
+        {
+            MarketHoursSegment Segment(int start, int end) =>
+                new MarketHoursSegment(MarketHoursState.Market, TimeSpan.FromHours(start), TimeSpan.FromHours(end));
+            var marketHours = Enum.GetValues<DayOfWeek>()
+                .Select(day => new LocalMarketHours(day, Segment(9, 12), Segment(14, 16)))
+                .ToDictionary(x => x.DayOfWeek);
+            var exchangeHours = new SecurityExchangeHours(
+                TimeZones.NewYork,
+                Enumerable.Empty<DateTime>(),
+                marketHours,
+                new Dictionary<DateTime, TimeSpan>(),
+                new Dictionary<DateTime, TimeSpan>());
+
+            var nextMarketOpen = exchangeHours.GetNextMarketOpen(Parse.DateTime(startTime), false);
+
+            Assert.AreEqual(Parse.DateTime(expectedNextMarketOpen), nextMarketOpen);
+        }
+
+        [TestCase("2024-01-07 17:00:00", false, "2024-01-08 00:00:00")]
+        [TestCase("2024-01-07 19:00:00", false, "2024-01-08 00:00:00")]
+        [TestCase("2024-01-07 23:59:59", false, "2024-01-08 00:00:00")]
+        [TestCase("2024-01-08 00:00:00", false, "2024-01-08 14:00:00")]
+        [TestCase("2024-01-07 17:00:00", true, "2024-01-07 18:00:00")]
+        [TestCase("2024-01-07 19:00:00", true, "2024-01-08 14:00:00")]
+        [TestCase("2024-01-07 23:59:59", true, "2024-01-08 14:00:00")]
+        [TestCase("2024-01-08 00:00:00", true, "2024-01-08 14:00:00")]
+        public void GetNextMarketOpenIgnoresExcludedExtendedHoursBeforeMidnightOpen(string startTime, bool extendedMarketHours, string expectedNextMarketOpen)
+        {
+            var exchangeHours = CreateExchangeHoursWithPreMarketBeforeMidnightOpen();
+
+            var nextMarketOpen = exchangeHours.GetNextMarketOpen(Parse.DateTime(startTime), extendedMarketHours);
+
+            Assert.AreEqual(Parse.DateTime(expectedNextMarketOpen), nextMarketOpen);
+        }
+
+        [TestCase(false, "2024-01-08 00:00:00")]
+        [TestCase(true, "2024-01-07 18:00:00")]
+        public void GetPreviousMarketOpenIgnoresExcludedExtendedHoursBeforeMidnightOpen(bool extendedMarketHours, string expectedPreviousMarketOpen)
+        {
+            var exchangeHours = CreateExchangeHoursWithPreMarketBeforeMidnightOpen();
+
+            var previousMarketOpen = exchangeHours.GetPreviousMarketOpen(new DateTime(2024, 1, 8, 10, 0, 0), extendedMarketHours);
+
+            Assert.AreEqual(Parse.DateTime(expectedPreviousMarketOpen), previousMarketOpen);
+        }
+
+        private static SecurityExchangeHours CreateExchangeHoursWithPreMarketBeforeMidnightOpen()
+        {
+            var marketHours = Enum.GetValues<DayOfWeek>()
+                .Select(day => LocalMarketHours.ClosedAllDay(day))
+                .ToDictionary(x => x.DayOfWeek);
+            marketHours[DayOfWeek.Sunday] = new LocalMarketHours(DayOfWeek.Sunday,
+                new MarketHoursSegment(MarketHoursState.PreMarket, TimeSpan.FromHours(18), TimeSpan.FromHours(24)));
+            marketHours[DayOfWeek.Monday] = new LocalMarketHours(DayOfWeek.Monday,
+                new MarketHoursSegment(MarketHoursState.Market, TimeSpan.Zero, TimeSpan.FromHours(12)),
+                new MarketHoursSegment(MarketHoursState.Market, TimeSpan.FromHours(14), TimeSpan.FromHours(16)));
+            return new SecurityExchangeHours(
+                TimeZones.NewYork,
+                Enumerable.Empty<DateTime>(),
+                marketHours,
+                new Dictionary<DateTime, TimeSpan>(),
+                new Dictionary<DateTime, TimeSpan>());
+        }
+
+        [TestCase("2012-07-04 00:00:01", true, "2012-07-04 18:00:00")]
+        [TestCase("2012-07-04 09:30:00", true, "2012-07-04 18:00:00")]
+        [TestCase("2012-07-04 10:00:00", true, "2012-07-04 18:00:00")]
+        [TestCase("2012-07-04 10:00:00", false, "2012-07-05 09:30:00")]
+        public void GetNextMarketOpenFindsLateOpenAfterEarlyCloseOnSameDay(string startTime, bool extendedMarketHours, string expectedNextMarketOpen)
+        {
+            var exchangeHours = MarketHoursDatabase.FromDataFolder().GetEntry(Market.CME, "ES", SecurityType.Future).ExchangeHours;
+
+            var nextMarketOpen = exchangeHours.GetNextMarketOpen(Parse.DateTime(startTime), extendedMarketHours);
+
+            Assert.AreEqual(Parse.DateTime(expectedNextMarketOpen), nextMarketOpen);
+        }
+
+        private static SecurityExchangeHours CreateContinuousExchangeHoursWithEarlyClose(DateTime earlyCloseDate, bool hasLateOpen)
+        {
+            MarketHoursSegment Segment(int start, int end) =>
+                new MarketHoursSegment(MarketHoursState.Market, TimeSpan.FromHours(start), TimeSpan.FromHours(end));
+            var marketHours = new[]
+            {
+                new LocalMarketHours(DayOfWeek.Sunday, Segment(17, 24)),
+                new LocalMarketHours(DayOfWeek.Monday, Segment(0, 16), Segment(17, 24)),
+                new LocalMarketHours(DayOfWeek.Tuesday, Segment(0, 16), Segment(17, 24)),
+                new LocalMarketHours(DayOfWeek.Wednesday, Segment(0, 16), Segment(17, 24)),
+                new LocalMarketHours(DayOfWeek.Thursday, Segment(0, 16), Segment(17, 24)),
+                new LocalMarketHours(DayOfWeek.Friday, Segment(0, 16)),
+                LocalMarketHours.ClosedAllDay(DayOfWeek.Saturday)
+            }.ToDictionary(x => x.DayOfWeek);
+            var lateOpens = hasLateOpen
+                ? new Dictionary<DateTime, TimeSpan> { { earlyCloseDate, TimeSpan.FromHours(17) } }
+                : new Dictionary<DateTime, TimeSpan>();
+            return new SecurityExchangeHours(
+                TimeZones.Chicago,
+                Enumerable.Empty<DateTime>(),
+                marketHours,
+                new Dictionary<DateTime, TimeSpan> { { earlyCloseDate, TimeSpan.FromHours(12) } },
+                lateOpens);
         }
 
         [Test]

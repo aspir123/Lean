@@ -18,7 +18,7 @@ using System;
 namespace QuantConnect.Brokerages
 {
     /// <summary>
-    /// Specifices what transaction model and submit/execution rules to use
+    /// Specifies what transaction model and submit/execution rules to use
     /// </summary>
     public enum BrokerageName
     {
@@ -229,6 +229,11 @@ namespace QuantConnect.Brokerages
         /// <summary>
         /// Transaction and submit/execution rules will use Quant Bridge models
         /// </summary>
-        QuantBridge
+        QuantBridge,
+        
+        /// <summary>
+        /// Transaction and submit/execution rules will use eToro models
+        /// </summary>
+        Etoro
     }
 }

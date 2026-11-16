@@ -14,7 +14,6 @@
 */
 
 using System;
-using System.Linq;
 using System.Threading;
 using QuantConnect.Util;
 using QuantConnect.Data;
@@ -117,6 +116,19 @@ namespace QuantConnect.Lean.Engine.DataFeeds.DataDownloader
                 _futureChainProvider = new CachingFutureChainProvider(baseFutureChainProvider);
                 Composer.Instance.AddPart(_futureChainProvider);
             }
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="CanonicalDataDownloaderDecorator"/> class with the given chain providers.
+        /// </summary>
+        /// <param name="dataDownloader">The underlying data downloader to decorate with canonical symbol support.</param>
+        /// <param name="futureChainProvider">The future chain provider for resolving future contract lists.</param>
+        /// <param name="optionChainProvider">The option chain provider for resolving option contract lists.</param>
+        internal CanonicalDataDownloaderDecorator(IDataDownloader dataDownloader, IFutureChainProvider futureChainProvider, IOptionChainProvider optionChainProvider)
+        {
+            _dataDownloader = dataDownloader;
+            _futureChainProvider = futureChainProvider;
+            _optionChainProvider = optionChainProvider;
         }
 
         /// <summary>
@@ -243,18 +255,14 @@ namespace QuantConnect.Lean.Engine.DataFeeds.DataDownloader
                 }
             });
 
-            var consumingEnumerable = blockingCollection.GetConsumingEnumerable();
-
-            if (!consumingEnumerable.Any())
+            // blocks until the first data point arrives or the producer completes with no data
+            var contractsData = blockingCollection.GetConsumingEnumerableOrNull();
+            if (contractsData == null && Interlocked.Read(ref processedContracts) == 0)
             {
-                if (Interlocked.Read(ref processedContracts) == 0)
-                {
-                    Log.Error($"{nameof(CanonicalDataDownloaderDecorator)}.{nameof(GetContractsData)}: No contracts were found. Do you have universe data?");
-                }
-                return null;
+                Log.Error($"{nameof(CanonicalDataDownloaderDecorator)}.{nameof(GetContractsData)}: No contracts were found. Do you have universe data?");
             }
 
-            return consumingEnumerable;
+            return contractsData;
         }
 
         /// <summary>

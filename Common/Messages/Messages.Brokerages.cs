@@ -55,7 +55,7 @@ namespace QuantConnect
             public static string OrderUpdateNotSupported = "Brokerage does not support update. You must cancel and re-create instead.";
 
             /// <summary>
-            /// Retunrns a string message saying the type of the given security is not supported by the given brokerage
+            /// Returns a string message saying the type of the given security is not supported by the given brokerage
             /// </summary>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static string UnsupportedSecurityType(IBrokerageModel brokerageModel, Securities.Security security)
@@ -688,6 +688,57 @@ namespace QuantConnect
             public static string ExtendedMarketOrderMustBeLimit(Orders.Order order)
             {
                 return Invariant($"Orders for extended market must be of type '{nameof(OrderType.Limit)}' and with 'DAY' time-in-force, but {order.Type} was specified.");
+            }
+        }
+
+        /// <summary>
+        /// Provides user-facing messages for the <see cref="Brokerages.EtoroBrokerageModel"/> class and its consumers or related classes
+        /// </summary>
+        public static class EtoroBrokerageModel
+        {
+            /// <summary>
+            /// Returns a message explaining that a short sale needs a stop loss: a stop market order it triggers.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static string ShortSaleRequiresStopLoss(Orders.Order order)
+            {
+                return Invariant($"A short sale of {order.Symbol.Value} at eToro needs a stop loss: a stop market order the short sale triggers, as a one triggers other or a bracket order. eToro closes the short position at its stop price.");
+            }
+
+            /// <summary>
+            /// Returns a message explaining that a position with leverage above 1 needs a stop loss: a stop market order the entry triggers.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static string LeverageRequiresStopLoss(Orders.Order order, decimal leverage)
+            {
+                return Invariant($"A position in {order.Symbol.Value} at leverage {leverage} at eToro needs a stop loss: a stop market order the entry triggers, as a one triggers other or a bracket order. eToro closes the position at its stop price.");
+            }
+
+            /// <summary>
+            /// Returns a message explaining that a crypto stop loss has to be at least a given percent away from the price.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static string CryptoStopLossTooClose(Orders.Order order, decimal price, int minimumPercent)
+            {
+                return Invariant($"The stop loss of {order.Symbol.Value} at eToro has to be at least {minimumPercent}% away from the price {price}: eToro keeps a crypto stop loss that far from the position and moves a closer one there.");
+            }
+
+            /// <summary>
+            /// Returns a message explaining that a stop loss has to be below the price of a long position and above the price of a short one.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static string StopLossOnTheWrongSide(Orders.Order order, decimal stopPrice, decimal price)
+            {
+                return Invariant($"The stop loss of {order.Symbol.Value} at {stopPrice} is on the wrong side of the price {price}: eToro keeps the stop loss of a long position below the price and that of a short position above it.");
+            }
+
+            /// <summary>
+            /// Returns a message explaining that a take profit has to be above the price of a long position and below the price of a short one.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static string TakeProfitOnTheWrongSide(Orders.Order order, decimal limitPrice, decimal price)
+            {
+                return Invariant($"The take profit of {order.Symbol.Value} at {limitPrice} is on the wrong side of the price {price}: eToro keeps the take profit of a long position above the price and that of a short position below it.");
             }
         }
 

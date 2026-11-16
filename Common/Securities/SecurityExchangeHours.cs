@@ -324,33 +324,33 @@ namespace QuantConnect.Securities
 
             var lastDay = time.Date.AddDays(-1);
             var lastDayMarketHours = GetMarketHours(lastDay);
-            var lastDaySegment = lastDayMarketHours.Segments.LastOrDefault();
+            var lastDaySegment = GetLastEligibleSegment(lastDayMarketHours);
             do
             {
                 var marketHours = GetMarketHours(time);
                 if (!marketHours.IsClosedAllDay && !_holidays.Contains(time.Date.Ticks))
                 {
                     var marketOpenTimeOfDay = marketHours.GetMarketOpen(time.TimeOfDay, extendedMarketHours, lastDaySegment?.End);
-                    if (marketOpenTimeOfDay.HasValue)
+                    // the open found can be the start of the session holding the reference time, so keep searching after that session ends
+                    if (marketOpenTimeOfDay.HasValue && time.Date + marketOpenTimeOfDay.Value <= localDateTime)
                     {
-                        var marketOpen = time.Date + marketOpenTimeOfDay.Value;
-                        if (localDateTime < marketOpen)
+                        for (var i = 0; i < marketHours.Segments.Count; i++)
                         {
-                            return marketOpen;
+                            var segment = marketHours.Segments[i];
+                            if (segment.Start == marketOpenTimeOfDay.Value)
+                            {
+                                marketOpenTimeOfDay = marketHours.GetMarketOpen(segment.End, extendedMarketHours, lastDaySegment?.End);
+                                break;
+                            }
                         }
                     }
 
-                    // If there was an early close the market opens until next day first segment,
-                    // so we don't take into account continuous segments between days, then
-                    // lastDaySegment should be null
-                    if (_earlyCloses.ContainsKey(time.Date))
+                    if (marketOpenTimeOfDay.HasValue)
                     {
-                        lastDaySegment = null;
+                        return time.Date + marketOpenTimeOfDay.Value;
                     }
-                    else
-                    {
-                        lastDaySegment = marketHours.Segments.LastOrDefault();
-                    }
+
+                    lastDaySegment = GetLastEligibleSegment(marketHours);
                 }
                 else
                 {
@@ -362,6 +362,14 @@ namespace QuantConnect.Securities
             while (time < oneWeekLater);
 
             throw new ArgumentException(Messages.SecurityExchangeHours.UnableToLocateNextMarketOpenInTwoWeeks(IsMarketAlwaysOpen));
+
+            // an excluded extended hours segment can't make the next day's opening a continuation
+            MarketHoursSegment GetLastEligibleSegment(LocalMarketHours marketHours)
+            {
+                return extendedMarketHours
+                    ? marketHours.Segments.LastOrDefault()
+                    : marketHours.Segments.LastOrDefault(segment => segment.State == MarketHoursState.Market);
+            }
         }
 
         /// <summary>
@@ -435,11 +443,6 @@ namespace QuantConnect.Securities
         {
             var nextOrPrevious = isNextDay ? 1 : -1;
             var nextOrPreviousDay = time.Date.AddDays(nextOrPrevious);
-            if (_earlyCloses.ContainsKey(nextOrPreviousDay.Date))
-            {
-                return null;
-            }
-
             var segments = GetMarketHours(nextOrPreviousDay).Segments;
             return isNextDay ? segments.FirstOrDefault() : segments.LastOrDefault();
         }

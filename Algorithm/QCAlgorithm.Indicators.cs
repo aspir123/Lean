@@ -844,7 +844,7 @@ namespace QuantConnect.Algorithm
         /// </summary>
         /// <param name="symbol">The symbol whose EMV we want</param>
         /// <param name="period">The period of the EMV</param>
-        /// <param name="scale">The length of the outputed value</param>
+        /// <param name="scale">The length of the outputted value</param>
         /// <param name="resolution">The resolution</param>
         /// <param name="selector">Selects a value from the BaseData to send into the indicator, if null defaults to casting the input value to a TradeBar</param>
         /// <returns>The EaseOfMovementValue indicator for the given parameters</returns>
@@ -3107,7 +3107,7 @@ namespace QuantConnect.Algorithm
         }
 
         /// <summary>
-        /// Creates a new name for an indicator created with the convenience functions (SMA, EMA, ect...)
+        /// Creates a new name for an indicator created with the convenience functions (SMA, EMA, etc...)
         /// </summary>
         /// <param name="symbol">The symbol this indicator is registered to</param>
         /// <param name="type">The indicator type, for example, 'SMA(5)'</param>
@@ -3120,7 +3120,7 @@ namespace QuantConnect.Algorithm
         }
 
         /// <summary>
-        /// Creates a new name for an indicator created with the convenience functions (SMA, EMA, ect...)
+        /// Creates a new name for an indicator created with the convenience functions (SMA, EMA, etc...)
         /// </summary>
         /// <param name="symbol">The symbol this indicator is registered to</param>
         /// <param name="type">The indicator type, for example, 'SMA(5)'</param>
@@ -4564,22 +4564,26 @@ namespace QuantConnect.Algorithm
 
             var nonIndicatorValues = new Dictionary<string, List<(DateTime, object)>>();
             var indicatorsDataPointsByTime = new List<IndicatorDataPoints>();
-            var lastConsumedTime = DateTime.MinValue;
-            IndicatorDataPoint lastPoint = null;
-            void consumeLastPoint(IndicatorDataPoint newInputPoint)
+            IndicatorDataPoints lastIndicatorDataPoints = null;
+            IndicatorUpdatedHandler callback = (object _, IndicatorDataPoint newInputPoint) =>
             {
-                if (newInputPoint == null || lastConsumedTime == newInputPoint.EndTime)
+                if (!indicator.IsReady)
                 {
                     return;
                 }
-                lastConsumedTime = newInputPoint.EndTime;
 
-                var IndicatorDataPoints = new IndicatorDataPoints { Time = newInputPoint.Time, EndTime = newInputPoint.EndTime };
-                indicatorsDataPointsByTime.Add(IndicatorDataPoints);
+                // indicators which consume data from multiple symbols trigger the Updated event for each symbol at the same time,
+                // the earlier ones carrying a stale value, so we replace the values of the same time to keep the final one
+                var replaceLast = lastIndicatorDataPoints?.EndTime == newInputPoint.EndTime;
+                if (!replaceLast)
+                {
+                    lastIndicatorDataPoints = new IndicatorDataPoints { Time = newInputPoint.Time, EndTime = newInputPoint.EndTime };
+                    indicatorsDataPointsByTime.Add(lastIndicatorDataPoints);
+                }
                 for (var i = 0; i < indicatorsDataPointPerProperty.Count; i++)
                 {
                     var newPoint = indicatorsDataPointPerProperty[i].UpdateValue();
-                    IndicatorDataPoints.SetProperty(indicatorsDataPointPerProperty[i].Name, newPoint);
+                    lastIndicatorDataPoints.SetProperty(indicatorsDataPointPerProperty[i].Name, newPoint);
                 }
 
                 foreach (var property in nonIndicatorProperties)
@@ -4593,25 +4597,15 @@ namespace QuantConnect.Algorithm
                         nonIndicatorValues[propertyName] = propertyHistory;
                     }
 
-                    propertyHistory.Add((newInputPoint.EndTime, propertyValue));
+                    if (replaceLast)
+                    {
+                        propertyHistory[^1] = (newInputPoint.EndTime, propertyValue);
+                    }
+                    else
+                    {
+                        propertyHistory.Add((newInputPoint.EndTime, propertyValue));
+                    }
                 }
-            }
-
-            IndicatorUpdatedHandler callback = (object _, IndicatorDataPoint newInputPoint) =>
-            {
-                if (!indicator.IsReady)
-                {
-                    return;
-                }
-
-                if (lastPoint == null || lastPoint.Time != newInputPoint.Time)
-                {
-                    // if null, it's the first point, we transitions from not ready to ready
-                    // else when the time changes we fetch the indicators values, some indicators which consume data from multiple symbols might trigger the Updated event
-                    // even if their value has not changed yet
-                    consumeLastPoint(newInputPoint);
-                }
-                lastPoint = newInputPoint;
             };
 
             // register the callback, update the indicator and unregister finally
@@ -4632,8 +4626,6 @@ namespace QuantConnect.Algorithm
                     }
                 }
             }
-            // flush the last point, this will be useful for indicator consuming time from multiple symbols
-            consumeLastPoint(lastPoint);
             indicator.Updated -= callback;
 
             return new IndicatorHistory(indicatorsDataPointsByTime, indicatorsDataPointPerProperty,
