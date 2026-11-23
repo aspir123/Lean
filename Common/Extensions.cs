@@ -1078,8 +1078,7 @@ namespace QuantConnect
         /// <param name="queue">queue object</param>
         public static void Clear<T>(this ConcurrentQueue<T> queue)
         {
-            T item;
-            while (queue.TryDequeue(out item))
+            while (queue.TryDequeue(out _))
             {
                 // NOP
             }
@@ -1466,7 +1465,7 @@ namespace QuantConnect
         /// <returns>New instance with just 3 decimal places</returns>
         public static decimal TruncateTo3DecimalPlaces(this decimal value)
         {
-            // we will multiply by 1k bellow, if its bigger it will stack overflow
+            // we will multiply by 1k below, if its bigger it will stack overflow
             if (value >= decimal.MaxValue / 1000
                 || value <= decimal.MinValue / 1000
                 || value == 0)
@@ -1766,7 +1765,6 @@ namespace QuantConnect
             var csv = new List<string>(size);
 
             var last = -1;
-            var count = 0;
             var textDataField = false;
 
             for (var i = 0; i < str.Length; i++)
@@ -1780,7 +1778,6 @@ namespace QuantConnect
                 {
                     csv.Add(str.Substring(last + 1, (i - last)).Trim(' ', ','));
                     last = i;
-                    count++;
                 }
             }
 
@@ -2050,8 +2047,8 @@ namespace QuantConnect
             {
                 // Will subtract interval to 'dateTime' in the roundingTimeZone (using the same value type instance) to avoid issues with daylight saving time changes.
                 // GH issue 2368: subtracting interval to 'dateTime' in exchangeHours.TimeZone and converting back to roundingTimeZone
-                // caused the substraction to be neutralized by daylight saving time change, which caused an infinite loop situation in this loop.
-                // The issue also happens if substracting in roundingTimeZone and converting back to exchangeHours.TimeZone.
+                // caused the subtraction to be neutralized by daylight saving time change, which caused an infinite loop situation in this loop.
+                // The issue also happens if subtracting in roundingTimeZone and converting back to exchangeHours.TimeZone.
 
                 dateTimeInRoundingTimeZone -= interval;
                 roundedDateTimeInRoundingTimeZone = dateTimeInRoundingTimeZone.RoundDown(interval);
@@ -3226,7 +3223,7 @@ namespace QuantConnect
                 Exception exception = null;
                 if (!PyList.IsListType(pyObject))
                 {
-                    // it's not a pylist try to conver directly
+                    // it's not a pylist try to convert directly
                     Symbol result = null;
                     try
                     {
@@ -3354,7 +3351,7 @@ namespace QuantConnect
         [Obsolete("Deprecated as of 2025-07. Please use `str()`.")]
         public static string GetEnumString(this Enum value, PyObject pyObject)
         {
-            var type = GetType(pyObject);
+            GetType(pyObject);
             return value.ToString();
         }
 
@@ -3916,7 +3913,7 @@ namespace QuantConnect
                 var priceScaleFrontier = data.Time;
                 if (data.Time.Date != data.EndTime.Date && data.EndTime.TimeOfDay > TimeSpan.Zero)
                 {
-                    // if the data point goes from one day to another after midnight we use EndTime, this is due to differences between 'data' and 'exchage' time zone,
+                    // if the data point goes from one day to another after midnight we use EndTime, this is due to differences between 'data' and 'exchange' time zone,
                     // for example: NYMEX future CL 'data' TZ is UTC while 'exchange' TZ is NY, so daily bars go from 8PM 'X day' to 8PM 'X+1 day'. Note that the data
                     // in the daily bar itself is filtered by exchange open, so it has data from 09:30 'X+1 day' to 17:00 'X+1 day' as expected.
                     // A potential solution to avoid the need of this check is to adjust the daily data time zone to match the exchange time zone, following this example above
@@ -4288,11 +4285,57 @@ namespace QuantConnect
                 }
                 else
                 {
-                    // for items not directly requested set leverage to 1 and at the min resolution
-                    security = algorithm.AddSecurity(symbol.SecurityType, symbol.Value, resolution, symbol.ID.Market, fillForward, leverage, extendedHours);
+                    // add by symbol, not by ticker: the ticker can be outdated, such as a deserialized symbol's first ticker,
+                    // and resolving it today could land on a different security than the security identifier
+                    security = symbol.SecurityType == SecurityType.Equity
+                        ? AddUnrequestedEquity(algorithm, symbol, resolution, fillForward, leverage, extendedHours)
+                        : algorithm.AddSecurity(symbol, resolution, fillForward, leverage, extendedHours);
                 }
             }
             return true;
+        }
+
+        /// <summary>
+        /// Adds an equity by its security identifier, under the ticker it trades under today, without taking that ticker
+        /// in the <see cref="SymbolCache"/> from the security that owns it today
+        /// </summary>
+        private static Security AddUnrequestedEquity(IAlgorithm algorithm, Symbol symbol, Resolution resolution, bool fillForward,
+            decimal leverage, bool extendedHours)
+        {
+            // the exchange's date now: the algorithm time can be behind it, during warmup or in another time zone
+            var utcNow = algorithm.LiveMode ? DateTime.UtcNow : algorithm.UtcTime;
+            var exchangeTimeZone = MarketHoursDatabase.FromDataFolder().GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType).TimeZone;
+            var exchangeDate = utcNow.ConvertFromUtc(exchangeTimeZone).Date;
+
+            var mapFile = Composer.Instance.GetPart<IMapFileProvider>().Get(AuxiliaryDataKey.Create(symbol)).ResolveMapFile(symbol);
+            // once the map file has ended the ticker isn't known to be this security's today
+            var tickerIsCurrent = exchangeDate <= mapFile.DelistingDate;
+            var currentTicker = mapFile.GetMappedSymbol(exchangeDate, symbol.Value);
+            if (!string.IsNullOrEmpty(currentTicker) && currentTicker != symbol.Value)
+            {
+                symbol = symbol.UpdateMappedSymbol(currentTicker);
+            }
+
+            SymbolCache.TryGetSymbol(symbol.Value, out var previous);
+            if (previous != null && (previous.SecurityType != symbol.SecurityType || previous.ID.Market != symbol.ID.Market))
+            {
+                // like adding the ticker does, a cached symbol of another security type or market, such as custom data, doesn't keep it
+                previous = null;
+            }
+            var security = algorithm.AddSecurity(symbol, resolution, fillForward, leverage, extendedHours);
+
+            if (previous != null && previous.ID != symbol.ID)
+            {
+                // the ticker keeps resolving to the security it resolved to before
+                SymbolCache.TryRemove(symbol);
+                SymbolCache.Set(symbol.Value, previous);
+            }
+            else if (previous == null && !tickerIsCurrent)
+            {
+                // so that adding the ticker later resolves it to the security that trades under it today
+                SymbolCache.TryRemove(symbol);
+            }
+            return security;
         }
 
         /// <summary>

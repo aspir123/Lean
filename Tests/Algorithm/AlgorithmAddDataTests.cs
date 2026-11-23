@@ -49,7 +49,7 @@ namespace QuantConnect.Tests.Algorithm
             var algo = new QCAlgorithm();
             algo.SubscriptionManager.SetDataManager(new DataManagerStub(algo));
 
-            // forex defult - should be quotebar
+            // forex default - should be quotebar
             var forexTrade = algo.AddForex("EURUSD");
             Assert.IsTrue(forexTrade.Subscriptions.Count() == 1);
             Assert.IsTrue(GetMatchingSubscription(algo, forexTrade.Symbol, typeof(QuoteBar)) != null);
@@ -206,15 +206,15 @@ namespace QuantConnect.Tests.Algorithm
             qcAlgorithm.Settings.SeedInitialPrices = false;
             var testHistoryProvider = new TestHistoryProvider();
             qcAlgorithm.HistoryProvider = testHistoryProvider;
-            var option = qcAlgorithm.AddOption(testHistoryProvider.underlyingSymbol);
+            qcAlgorithm.AddOption(testHistoryProvider.underlyingSymbol);
 
             var symbol = Symbol.CreateOption(testHistoryProvider.underlyingSymbol, Market.USA, OptionStyle.American,
                 OptionRight.Call, 1, new DateTime(2015, 12, 24));
             var symbol2 = Symbol.CreateOption(testHistoryProvider.underlyingSymbol, Market.USA, OptionStyle.American,
                 OptionRight.Put, 1, new DateTime(2015, 12, 24));
 
-            var optionContract = qcAlgorithm.AddOptionContract(symbol);
-            var optionContract2 = qcAlgorithm.AddOptionContract(symbol2);
+            qcAlgorithm.AddOptionContract(symbol);
+            qcAlgorithm.AddOptionContract(symbol2);
 
             qcAlgorithm.OnEndOfTimeStep();
             var data = qcAlgorithm.Securities[testHistoryProvider.underlyingSymbol].GetLastData();
@@ -263,7 +263,7 @@ namespace QuantConnect.Tests.Algorithm
 
             // Dummy here is meant to try to corrupt the SymbolCache. Ideally, SymbolCache should return non-custom data types with higher priority
             // in case we want to add two custom data types, but still have them associated with the equity from the cache if we're using it.
-            // This covers the case where two idential data subscriptions are created.
+            // This covers the case where two identical data subscriptions are created.
             var dummy = qcAlgorithm.AddData(customDataType, asset.Symbol, Resolution.Daily, qcAlgorithm.SubscriptionManager.Subscriptions.Where(x => x.SecurityType == securityType).First().DataTimeZone);
             var customData = qcAlgorithm.AddData(customDataType, asset.Symbol, Resolution.Daily, qcAlgorithm.SubscriptionManager.Subscriptions.Where(x => x.SecurityType == securityType).First().DataTimeZone);
 
@@ -331,7 +331,7 @@ namespace QuantConnect.Tests.Algorithm
 
             // Dummy here is meant to try to corrupt the SymbolCache. Ideally, SymbolCache should return non-custom data types with higher priority
             // in case we want to add two custom data types, but still have them associated with the equity from the cache if we're using it.
-            // This covers the case where two idential data subscriptions are created.
+            // This covers the case where two identical data subscriptions are created.
             var dummy = qcAlgorithm.AddData(customDataType, ticker, Resolution.Daily, qcAlgorithm.SubscriptionManager.Subscriptions.Where(x => x.SecurityType == securityType).First().DataTimeZone);
             var customData = qcAlgorithm.AddData(customDataType, ticker, Resolution.Daily, qcAlgorithm.SubscriptionManager.Subscriptions.Where(x => x.SecurityType == securityType).First().DataTimeZone);
 
@@ -395,7 +395,7 @@ namespace QuantConnect.Tests.Algorithm
 
             // Dummy here is meant to try to corrupt the SymbolCache. Ideally, SymbolCache should return non-custom data types with higher priority
             // in case we want to add two custom data types, but still have them associated with the equity from the cache if we're using it.
-            // This covers the case where two idential data subscriptions are created.
+            // This covers the case where two identical data subscriptions are created.
             var dummy = qcAlgorithm.AddData(customDataType, ticker, Resolution.Daily, qcAlgorithm.SubscriptionManager.Subscriptions.Where(x => x.SecurityType == securityType).First().DataTimeZone);
             var customData = qcAlgorithm.AddData(customDataType, ticker, Resolution.Daily, qcAlgorithm.SubscriptionManager.Subscriptions.Where(x => x.SecurityType == securityType).First().DataTimeZone);
 
@@ -501,7 +501,7 @@ namespace QuantConnect.Tests.Algorithm
 
             // Dummy here is meant to try to corrupt the SymbolCache. Ideally, SymbolCache should return non-custom data types with higher priority
             // in case we want to add two custom data types, but still have them associated with the equity from the cache if we're using it.
-            // This covers the case where two idential data subscriptions are created.
+            // This covers the case where two identical data subscriptions are created.
             var dummy = qcAlgorithm.AddData(customDataType, asset.Symbol, Resolution.Daily, qcAlgorithm.SubscriptionManager.Subscriptions.Where(x => x.SecurityType == SecurityType.Option).Single().DataTimeZone);
             var customData = qcAlgorithm.AddData(customDataType, asset.Symbol, Resolution.Daily, qcAlgorithm.SubscriptionManager.Subscriptions.Where(x => x.SecurityType == SecurityType.Option).Single().DataTimeZone);
 
@@ -534,7 +534,7 @@ namespace QuantConnect.Tests.Algorithm
 
             // Dummy here is meant to try to corrupt the SymbolCache. Ideally, SymbolCache should return non-custom data types with higher priority
             // in case we want to add two custom data types, but still have them associated with the equity from the cache if we're using it.
-            // This covers the case where two idential data subscriptions are created.
+            // This covers the case where two identical data subscriptions are created.
             var dummy = qcAlgorithm.AddData(customDataType, ticker, Resolution.Daily, qcAlgorithm.SubscriptionManager.Subscriptions.Where(x => x.SecurityType == SecurityType.Option).Single().DataTimeZone);
             var customData = qcAlgorithm.AddData(customDataType, ticker, Resolution.Daily, qcAlgorithm.SubscriptionManager.Subscriptions.Where(x => x.SecurityType == SecurityType.Option).Single().DataTimeZone);
 
@@ -561,11 +561,11 @@ namespace QuantConnect.Tests.Algorithm
             var qcAlgorithm = new QCAlgorithm();
             qcAlgorithm.SubscriptionManager.SetDataManager(new DataManagerStub(qcAlgorithm));
 
-            var asset = qcAlgorithm.AddOption(ticker);
+            qcAlgorithm.AddOption(ticker);
 
             // Dummy here is meant to try to corrupt the SymbolCache. Ideally, SymbolCache should return non-custom data types with higher priority
             // in case we want to add two custom data types, but still have them associated with the equity from the cache if we're using it.
-            // This covers the case where two idential data subscriptions are created.
+            // This covers the case where two identical data subscriptions are created.
             var dummy = qcAlgorithm.AddData(customDataType, ticker, Resolution.Daily, qcAlgorithm.SubscriptionManager.Subscriptions.Where(x => x.SecurityType == SecurityType.Option).Single().DataTimeZone);
             var customData = qcAlgorithm.AddData(customDataType, ticker, Resolution.Daily, qcAlgorithm.SubscriptionManager.Subscriptions.Where(x => x.SecurityType == SecurityType.Option).Single().DataTimeZone);
 
@@ -803,7 +803,7 @@ namespace QuantConnect.Tests.Algorithm
 
         private static SubscriptionDataConfig GetMatchingSubscription(QCAlgorithm algorithm, Symbol symbol, Type type)
         {
-            // find a subscription matchin the requested type with a higher resolution than requested
+            // find a subscription matching the requested type with a higher resolution than requested
             return algorithm.SubscriptionManager.SubscriptionDataConfigService
                 .GetSubscriptionDataConfigs(symbol)
                 .Where(config => type.IsAssignableFrom(config.Type))

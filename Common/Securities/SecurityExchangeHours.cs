@@ -415,6 +415,11 @@ namespace QuantConnect.Securities
                     // the next day first segment for the case in which the next market close is the last segment
                     // of the current day
                     var nextSegment = GetNextOrPreviousSegment(time, isNextDay: true);
+                    // an excluded extended hours segment can't make the current day's close a continuation
+                    if (!extendedMarketHours && nextSegment?.State != MarketHoursState.Market)
+                    {
+                        nextSegment = null;
+                    }
                     var marketCloseTimeOfDay = marketHours.GetMarketClose(time.TimeOfDay, extendedMarketHours, lastClose, nextSegment?.Start);
                     if (marketCloseTimeOfDay.HasValue)
                     {
@@ -600,7 +605,7 @@ namespace QuantConnect.Securities
             }
 
             // It could be the case we have a late open after an early close (the market resumes after the early close), in that case, we should take
-            // the segments before the early close and the the segments after the late opens and append them. Therefore, if that's not the case, this is,
+            // the segments before the early close and the segments after the late opens and append them. Therefore, if that's not the case, this is,
             // if there was an early close but there is not a late open or it's before the early close, we need to update the variable marketHours with
             // the value of newMarketHours, so that it contains the segments before the early close
             if (segmentsEarlyClose != null && (!hasLateOpen || earlyCloseTime > lateOpenTime))

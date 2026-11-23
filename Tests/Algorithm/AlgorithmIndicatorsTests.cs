@@ -376,6 +376,16 @@ namespace QuantConnect.Tests.Algorithm
             Assert.AreNotEqual(0m, indicator.Slope.Current.Value);
         }
 
+        [Test]
+        public void HilbertTransformHelperUsesIndicatorName()
+        {
+            var indicator = _algorithm.HT(_equity, 7, 0.635m, 0.338m, Resolution.Minute);
+
+            Assert.AreEqual("HT(7, 0.635, 0.338,SPY_min)", indicator.Name);
+            Assert.AreEqual("HT(7, 0.635, 0.338,SPY_min)_inPhase", indicator.InPhase.Name);
+            Assert.AreEqual("HT(7, 0.635, 0.338,SPY_min)_quad", indicator.Quadrature.Name);
+        }
+
         [TestCase(Language.Python)]
         [TestCase(Language.CSharp)]
         public void IndicatorsPassingHistory(Language language)
@@ -675,7 +685,7 @@ class GoodCustomIndicator:
         }
 
         [Test]
-        public void IndicatorHistoryDataFrameDoesNotCointainDefaultDateTimeIndex()
+        public void IndicatorHistoryDataFrameDoesNotContainDefaultDateTimeIndex()
         {
             var pandasConverter = new PandasConverter();
             var indicatorsDataPointPerProperty = new List<InternalIndicatorValues>
@@ -716,7 +726,6 @@ class GoodCustomIndicator:
             dynamic dataframe = indicatorValues.DataFrame;
             using (Py.GIL())
             {
-                var index = dataframe.index;
                 var columns = dataframe.columns;
                 var expectedColumns = new List<string> { "smaprop", "genericprop", "current", "nongenericprop", "counter", "indicatortype", "description" };
                 var columnsCount = 0;
@@ -896,7 +905,7 @@ def get_indicator(algo, symbol):
 
             using var pyAlgo = _algorithm.ToPython();
             using var pySymbol = symbol.ToPython();
-            var indicator = testModule.GetAttr("get_indicator").Invoke(pyAlgo, pySymbol).GetAndDispose<IndicatorBase>();
+            testModule.GetAttr("get_indicator").Invoke(pyAlgo, pySymbol).GetAndDispose<IndicatorBase>();
 
             // The indicator should have been updated during the warm-up period
             var lastInput = testModule.GetAttr("LastInputTracker").GetAttr("last_input").GetAndDispose<TradeBar>();
@@ -940,7 +949,7 @@ def get_indicator(algo, symbol):
 
             using var pyAlgo = _algorithm.ToPython();
             using var pySymbol = symbol.ToPython();
-            var indicator = testModule.GetAttr("get_indicator").Invoke(pyAlgo, pySymbol).GetAndDispose<IndicatorBase>();
+            testModule.GetAttr("get_indicator").Invoke(pyAlgo, pySymbol).GetAndDispose<IndicatorBase>();
 
             // The indicator should have been updated during the warm-up period
             var lastInput = testModule.GetAttr("LastInputTracker").GetAttr("last_input").GetAndDispose<TradeBar>();

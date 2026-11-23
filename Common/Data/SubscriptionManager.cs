@@ -188,14 +188,21 @@ namespace QuantConnect.Data
                 {
                     subscription.Consolidators.Add(consolidator);
 
-                    var wrapper = _consolidators[consolidator] =
-                        new ConsolidatorWrapper(symbol, consolidator, subscription.Increment, _timeKeeper, _timeKeeper.GetLocalTimeKeeper(subscription.ExchangeTimeZone));
-
                     if (!_consolidatorsBySymbol.TryGetValue(symbol, out var symbolConsolidators))
                     {
                         _consolidatorsBySymbol[symbol] = symbolConsolidators = new();
                     }
                     symbolConsolidators.Add(consolidator);
+
+                    if (_consolidators.ContainsKey(consolidator))
+                    {
+                        // already scheduled for scans, e.g. a consolidator shared by several indicators: a second wrapper would
+                        // outlive its removal, since only the last one is tracked and disposed
+                        return;
+                    }
+
+                    var wrapper = _consolidators[consolidator] =
+                        new ConsolidatorWrapper(symbol, consolidator, subscription.Increment, _timeKeeper, _timeKeeper.GetLocalTimeKeeper(subscription.ExchangeTimeZone));
 
                     lock (_threadSafeCollectionLock)
                     {
@@ -226,7 +233,9 @@ namespace QuantConnect.Data
         {
             var consolidator = PythonUtil.CreateInstanceOrWrapper<IDataConsolidator>(
                 pyConsolidator,
-                py => new DataConsolidatorPythonWrapper(py)
+                // reuse the wrapper of an earlier registration: a new one would subscribe to the python event, be
+                // discarded by the consolidator collections as a duplicate, and so never be disposed on removal
+                py => FindPythonConsolidator(symbol, py) ?? new DataConsolidatorPythonWrapper(py)
             );
             AddConsolidator(symbol, consolidator);
         }
@@ -306,10 +315,10 @@ namespace QuantConnect.Data
 
         /// <summary>
         /// Finds the <see cref="DataConsolidatorPythonWrapper"/> previously created for the given python
-        /// consolidator so it can be removed and disposed, rather than a throwaway wrapper that would churn
-        /// the live python object's event subscription and leak the original one.
+        /// consolidator so it can be reused or removed and disposed, rather than a throwaway wrapper that would
+        /// subscribe to the live python object's event and leak that subscription or the original one.
         /// </summary>
-        private IDataConsolidator FindPythonConsolidator(Symbol symbol, PyObject pyConsolidator)
+        internal IDataConsolidator FindPythonConsolidator(Symbol symbol, PyObject pyConsolidator)
         {
             var configs = symbol != null
                 ? _subscriptionManager.GetSubscriptionDataConfigs(symbol)

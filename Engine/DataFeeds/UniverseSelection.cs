@@ -111,7 +111,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         }
 
         /// <summary>
-        /// Applies universe selection the the data feed and algorithm
+        /// Applies universe selection to the data feed and algorithm
         /// </summary>
         /// <param name="universe">The universe to perform selection on</param>
         /// <param name="dateTimeUtc">The current date time in utc</param>
@@ -131,7 +131,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             fineFiltered ??= (universe as FundamentalFilteredUniverse)?.FundamentalUniverse;
 
             if (fineFiltered != null
-                // if the universe has been disposed we don't perform selection. This us handled bellow by 'Universe.PerformSelection'
+                // if the universe has been disposed we don't perform selection. This is handled below by 'Universe.PerformSelection'
                 // but in this case we directly call 'SelectSymbols' because we want to perform fine selection even if coarse returns the same
                 // symbols, see 'Universe.PerformSelection', which detects this and returns 'Universe.Unchanged'
                 && !universe.DisposeRequested)
@@ -157,7 +157,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                         var set = selectSymbolsResult.ToHashSet();
                         fineCollection.Data.AddRange(universeData.Data.OfType<Fundamental>().Where(fundamental =>
                         {
-                            // we remove to we distict by symbol
+                            // we remove to we distinct by symbol
                             if (set.Remove(fundamental.Symbol))
                             {
                                 if (!fundamental.HasFundamentalData)

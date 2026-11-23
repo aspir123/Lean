@@ -301,7 +301,6 @@ namespace QuantConnect.Tests.Brokerages
             Log.Trace("");
             Log.Trace("GET OPEN ORDERS");
             Log.Trace("");
-            var orders = new List<Order>();
             foreach (var openOrder in Brokerage.GetOpenOrders())
             {
                 var leanOrders = OrderProvider.GetOrdersByBrokerageId(openOrder.BrokerId.FirstOrDefault());
@@ -449,7 +448,7 @@ namespace QuantConnect.Tests.Brokerages
             Log.Trace("");
             Log.Trace("LONG FROM SHORT");
             Log.Trace("");
-            // first fo short
+            // first go short
             PlaceOrderWaitForStatus(parameters.CreateShortMarketOrder(-GetDefaultQuantity()), OrderStatus.Filled);
 
             // now go long

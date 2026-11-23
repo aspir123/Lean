@@ -168,7 +168,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     {
                         // if disposed and we have the lock means it's not in the dictionary anymore, let's assert it
                         // but there is a window for another thread to add a **new/different** instance which is okay
-                        // we will pick it up on the store call bellow
+                        // we will pick it up on the store call below
                         if (_zipFileCache.TryGetValue(fileName, out var existing) && ReferenceEquals(existing, cachedZip))
                         {
                             Log.Error($"ZipDataCacheProvider.Store(): unexpected cache state for {fileName}");
@@ -232,7 +232,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             try
             {
                 var clearCacheIfOlderThan = utcNow.AddSeconds(-_cacheSeconds);
-                // clean all items that that are older than CacheSeconds than the current date
+                // clean all items that are older than CacheSeconds than the current date
                 foreach (var zip in _zipFileCache)
                 {
                     if (zip.Value.Uncache(clearCacheIfOlderThan))

@@ -191,7 +191,7 @@ namespace QuantConnect.Algorithm
 
             //Initialise Start Date:
             _startDate = new DateTime(1998, 01, 01);
-            // intialize our time keeper with only new york
+            // initialize our time keeper with only new york
             _timeKeeper = new TimeKeeper(_startDate, new[] { TimeZones.NewYork });
             // set our local time zone
             _localTimeKeeper = _timeKeeper.GetLocalTimeKeeper(TimeZones.NewYork);
@@ -243,7 +243,7 @@ namespace QuantConnect.Algorithm
             Universe = new UniverseDefinitions(this);
             UniverseSettings = new UniverseSettings(Resolution.Minute, Security.NullLeverage, true, false, TimeSpan.FromDays(1));
 
-            // initialize our scheduler, this acts as a liason to the real time handler
+            // initialize our scheduler, this acts as a liaison to the real time handler
             Schedule = new ScheduleManager(this, Securities, TimeZone, MarketHoursDatabase);
 
             // initialize the trade builder
@@ -1895,7 +1895,7 @@ namespace QuantConnect.Algorithm
             if (!_locked)
             {
                 _liveMode = live;
-                Notify = new NotificationManager(live);
+                Notify = new NotificationManager(live, Error);
                 TradeBuilder.SetLiveMode(live);
                 Securities.SetLiveMode(live);
                 Transactions.SetLiveMode(live);
@@ -2682,7 +2682,7 @@ namespace QuantConnect.Algorithm
         /// </summary>
         /// <param name="ticker">The crypto ticker symbol/param>
         /// <param name="resolution">The <see cref="Resolution"/> of market data, Tick, Second, Minute, Hour, or Daily. Default is <see cref="Resolution.Minute"/></param>
-        /// <param name="market">The The crypto trading market, <seealso cref="Market"/>. Default value is null and looked up using <see cref="IBrokerageModel.DefaultMarkets"/> in <see cref="AddSecurity{T}"/></param>
+        /// <param name="market">The crypto trading market, <seealso cref="Market"/>. Default value is null and looked up using <see cref="IBrokerageModel.DefaultMarkets"/> in <see cref="AddSecurity{T}"/></param>
         /// <param name="fillForward">If true, returns the last available data even if none in that timeslice. Default is <value>true</value></param>
         /// <param name="leverage">The requested leverage for this crypto. Default is set by <see cref="SecurityInitializer"/></param>
         /// <returns>The new <see cref="Crypto"/> security</returns>
@@ -2697,7 +2697,7 @@ namespace QuantConnect.Algorithm
         /// </summary>
         /// <param name="ticker">The crypto future ticker symbol</param>
         /// <param name="resolution">The <see cref="Resolution"/> of market data, Tick, Second, Minute, Hour, or Daily. Default is <see cref="Resolution.Minute"/></param>
-        /// <param name="market">The The crypto future trading market, <seealso cref="Market"/>. Default value is null and looked up using <see cref="IBrokerageModel.DefaultMarkets"/> in <see cref="AddSecurity{T}"/></param>
+        /// <param name="market">The crypto future trading market, <seealso cref="Market"/>. Default value is null and looked up using <see cref="IBrokerageModel.DefaultMarkets"/> in <see cref="AddSecurity{T}"/></param>
         /// <param name="fillForward">If true, returns the last available data even if none in that timeslice. Default is <value>true</value></param>
         /// <param name="leverage">The requested leverage for this crypto future. Default is set by <see cref="SecurityInitializer"/></param>
         /// <returns>The new <see cref="CryptoFuture"/> security</returns>

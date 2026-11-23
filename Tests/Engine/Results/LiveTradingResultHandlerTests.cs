@@ -71,9 +71,9 @@ namespace QuantConnect.Tests.Engine.Results
         [Test]
         public void UninitializedAlgorithm()
         {
-            using var messagging = new QuantConnect.Messaging.Messaging();
+            using var messaging = new QuantConnect.Messaging.Messaging();
             var result = new LiveTradingResultHandler();
-            result.Initialize(new(new LiveNodePacket(), messagging, null, new BacktestingTransactionHandler(), null));
+            result.Initialize(new(new LiveNodePacket(), messaging, null, new BacktestingTransactionHandler(), null));
 
             var algorithm = new AlgorithmStub();
             algorithm.AddEquity("SPY");
@@ -156,10 +156,10 @@ namespace QuantConnect.Tests.Engine.Results
         public void DailySampleValueBasedOnMarketHour(bool extendedMarketHoursEnabled)
         {
             using var api = new Api.Api();
-            using var messagging = new QuantConnect.Messaging.Messaging();
+            using var messaging = new QuantConnect.Messaging.Messaging();
             var referenceDate = new DateTime(2020, 11, 25);
             var resultHandler = new LiveTradingResultHandler();
-            resultHandler.Initialize(new(new LiveNodePacket(), messagging, api, new BacktestingTransactionHandler(), null));
+            resultHandler.Initialize(new(new LiveNodePacket(), messaging, api, new BacktestingTransactionHandler(), null));
 
             try
             {
@@ -443,6 +443,41 @@ namespace QuantConnect.Tests.Engine.Results
             {
                 resultHandler.Exit();
                 Config.Reset();
+            }
+        }
+
+        [Test]
+        public void NotificationSendFailureIsReportedAsAlgorithmError()
+        {
+            using var messaging = new QuantConnect.Messaging.Messaging();
+            var result = new LiveTradingResultHandler();
+            result.Initialize(new(new LiveNodePacket(), messaging, null, new BacktestingTransactionHandler(), null));
+
+            try
+            {
+                var algorithm = new AlgorithmStub();
+                result.SetAlgorithm(algorithm, 10);
+                algorithm.Notify.Messages.Enqueue(new FailingNotification());
+
+                result.ProcessSynchronousEvents(true);
+
+                Assert.IsEmpty(algorithm.Notify.Messages);
+                Assert.IsEmpty(algorithm.DebugMessages);
+                Assert.That(algorithm.ErrorMessages.Single(), Does.EndWith(FailingNotification.Error));
+            }
+            finally
+            {
+                result.Exit();
+            }
+        }
+
+        private class FailingNotification : Notifications.Notification
+        {
+            public const string Error = "The notification was rejected";
+
+            public override void Send()
+            {
+                throw new InvalidOperationException(Error);
             }
         }
 

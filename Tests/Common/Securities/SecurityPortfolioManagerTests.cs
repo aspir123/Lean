@@ -1028,8 +1028,6 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(0, security.Holdings.Quantity);
             Assert.AreEqual(10000, portfolio.Cash);
 
-            var orderFee = security.FeeModel.GetOrderFee(new OrderFeeParameters(
-                security, new MarketOrder(Symbols.BTCUSD, 2, DateTime.MinValue)));
             var fill = new OrderEvent(1, Symbols.BTCUSD, DateTime.MinValue, OrderStatus.Filled, OrderDirection.Buy, 4000.01m, 2, OrderFee.Zero);
             portfolio.ProcessFills(new List<OrderEvent> { fill });
             Assert.AreEqual(2, security.Holdings.Quantity);
@@ -1058,6 +1056,7 @@ namespace QuantConnect.Tests.Common.Securities
                 )
             );
             var security = securities[Symbols.AAPL];
+            security.SetMarketPrice(new Tick(DateTime.UtcNow, Symbols.AAPL, 100, 100));
             security.SettlementModel = new DelayedSettlementModel(3, TimeSpan.FromHours(8));
             Assert.AreEqual(0, security.Holdings.Quantity);
             Assert.AreEqual(1000, portfolio.Cash);
@@ -2173,7 +2172,6 @@ namespace QuantConnect.Tests.Common.Securities
             }
 
             // we just got assigned!
-            var newUnderlyingHoldings = _securities[Symbols.SPY].Holdings;
             Assert.AreEqual(0, _portfolio.Cash);
             Assert.AreEqual(0, _securities[Symbols.SPY].Holdings.Quantity);
 
@@ -2238,7 +2236,6 @@ namespace QuantConnect.Tests.Common.Securities
             }
 
             // we just got assigned! nothing changed...
-            var newUnderlyingHoldings = _securities[Symbols.SPY].Holdings;
             Assert.AreEqual(0, _portfolio.Cash);
             Assert.AreEqual(0, _securities[Symbols.SPY].Holdings.Quantity);
 
@@ -2302,7 +2299,6 @@ namespace QuantConnect.Tests.Common.Securities
             }
 
             // we just got assigned!
-            var newUnderlyingHoldings = _securities[Symbols.SPY].Holdings;
             Assert.AreEqual(0, _portfolio.Cash);
             Assert.AreEqual(0, _securities[Symbols.SPY].Holdings.Quantity);
 
@@ -2365,7 +2361,6 @@ namespace QuantConnect.Tests.Common.Securities
             }
 
             // we just got assigned!
-            var newUnderlyingHoldings = _securities[Symbols.SPY].Holdings;
             Assert.AreEqual(0, _portfolio.Cash);
             Assert.AreEqual(0, _securities[Symbols.SPY].Holdings.Quantity);
 

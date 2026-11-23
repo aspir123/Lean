@@ -84,6 +84,11 @@ namespace QuantConnect.Securities
         }
 
         /// <summary>
+        /// The currency converter of the security's portfolio
+        /// </summary>
+        internal ICurrencyConverter CurrencyConverter => _currencyConverter;
+
+        /// <summary>
         /// Gets the current target holdings for this security
         /// </summary>
         public IPortfolioTarget Target
@@ -119,7 +124,7 @@ namespace QuantConnect.Securities
             }
             protected set
             {
-                // avoid any small values, due to differences in lot size, to return invested true but lean not allowing us to trade sice it will be rounded down to 0
+                // avoid any small values, due to differences in lot size, to return invested true but lean not allowing us to trade since it will be rounded down to 0
                 // specially useful to crypto assets which take fees from the base or quote currency
                 _invested = Math.Abs(value) >= _security.SymbolProperties.LotSize;
                 _quantity = value;
@@ -479,6 +484,19 @@ namespace QuantConnect.Securities
         internal virtual decimal GetProfitFromValueChange(decimal entryValue, decimal exitValue)
         {
             return exitValue - entryValue;
+        }
+
+        /// <summary>
+        /// Calculates the average price of the position after a fill adds to it
+        /// </summary>
+        /// <param name="averagePrice">The average price of the position before the fill</param>
+        /// <param name="quantity">The signed quantity of the position before the fill</param>
+        /// <param name="fillPrice">The price of the fill</param>
+        /// <param name="fillQuantity">The signed quantity of the fill, in the direction of the position</param>
+        /// <returns>The average price of the increased position</returns>
+        internal virtual decimal GetAveragePriceAfterIncrease(decimal averagePrice, decimal quantity, decimal fillPrice, decimal fillQuantity)
+        {
+            return (averagePrice * quantity + fillQuantity * fillPrice) / (quantity + fillQuantity);
         }
 
         /// <summary>

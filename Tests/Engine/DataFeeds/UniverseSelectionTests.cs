@@ -231,11 +231,10 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                     }
                 )
             );
-            Symbol symbol;
             Assert.AreEqual(1, securityChanges.AddedSecurities.Count);
             Assert.AreEqual(Symbols.AAPL, securityChanges.AddedSecurities.First().Symbol);
-            Assert.IsFalse(SymbolCache.TryGetSymbol("AAPL", out symbol));
-            Assert.IsFalse(SymbolCache.TryGetSymbol("SPY", out symbol));
+            Assert.IsFalse(SymbolCache.TryGetSymbol("AAPL", out _));
+            Assert.IsFalse(SymbolCache.TryGetSymbol("SPY", out _));
         }
 
         [Test]
@@ -487,7 +486,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                 ]
             );
 
-            // Friday, one tradeale day left before end date
+            // Friday, one tradeable day left before end date
             var dateTime = new DateTime(2023, 12, 29).ConvertToUtc(algorithm.TimeZone);
             var universeData = getUniverseData(dateTime);
 

@@ -198,7 +198,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             var security = _algorithm.Securities[_symbol];
             var orderRequest = new SubmitOrderRequest(OrderType.Market, security.Type, security.Symbol, 1600, 0, 0, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -228,7 +228,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             var security = _algorithm.Securities[_symbol];
             var orderRequest = new SubmitOrderRequest(OrderType.Market, security.Type, security.Symbol, 1600, 0, 0, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -259,7 +259,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             var security = _algorithm.Securities[_symbol];
             var orderRequest = new SubmitOrderRequest(OrderType.Market, security.Type, security.Symbol, -1600, 0, 0, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -342,7 +342,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             var locateBefore = GetLocateState(properties);
             var orderRequest = new SubmitOrderRequest(OrderType.Market, security.Type, security.Symbol, quantity, 0, 0, DateTime.UtcNow, "", properties);
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -437,7 +437,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             var security = _algorithm.Securities[_symbol];
             var orderRequest = new SubmitOrderRequest(OrderType.Market, security.Type, security.Symbol, 600, 0, 0, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -465,7 +465,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             var security = _algorithm.Securities[_symbol];
             var orderRequest = new SubmitOrderRequest(OrderType.Market, security.Type, security.Symbol, 1000, 0, 0, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -498,7 +498,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             var security = _algorithm.Securities[_symbol];
             var orderRequest = new SubmitOrderRequest(OrderType.Market, security.Type, security.Symbol, 600, 0, 0, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -532,7 +532,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
         [TestCase("VIXW", "1.16", "1.16")]
         [TestCase("VIXW", "4.14", "4.14")]
         [TestCase("VIXW", "4.16", "4.16")]
-        public void DynamicIndexOptionPriceRoundeding(string indexOption, string orderPriceStr, string expectedPriceStr)
+        public void DynamicIndexOptionPriceRounding(string indexOption, string orderPriceStr, string expectedPriceStr)
         {
             var orderPrice = decimal.Parse(orderPriceStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture);
             var expectedPrice = decimal.Parse(expectedPriceStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture);
@@ -549,7 +549,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
             var orderRequest = new SubmitOrderRequest(OrderType.Limit, security.Type, security.Symbol, 10, orderPrice, orderPrice, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -582,7 +582,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
             var orderRequest = new SubmitOrderRequest(OrderType.Limit, security.Type, security.Symbol, 1600, 1.12121212m, 1.12121212m, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -616,7 +616,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
             var orderRequest = new SubmitOrderRequest(OrderType.StopMarket, security.Type, security.Symbol, 1600, 1.12131212m, 1.12131212m, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -773,7 +773,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
             var orderRequest = new SubmitOrderRequest(OrderType.Limit, security.Type, security.Symbol, 1000, 0, 1.11m, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -971,7 +971,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             Assert.AreEqual(OrderStatus.Submitted, orderTicket.Status);
 
             var updateRequest = new UpdateOrderRequest(DateTime.Now, orderTicket.OrderId, new UpdateOrderFields() { Quantity = 10000 });
-            var updateTicket = _transactionHandler.Process(updateRequest);
+            _transactionHandler.Process(updateRequest);
             _transactionHandler.HandleOrderRequest(updateRequest);
             Assert.AreEqual(OrderRequestStatus.Processed, updateRequest.Status);
             Assert.IsTrue(updateRequest.Response.IsSuccess);
@@ -1014,7 +1014,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             Assert.AreEqual(OrderStatus.Submitted, orderTicket.Status);
 
             var updateRequest = new UpdateOrderRequest(DateTime.Now, orderTicket.OrderId, new UpdateOrderFields() { Quantity = 10000 });
-            var updateTicket = _transactionHandler.Process(updateRequest);
+            _transactionHandler.Process(updateRequest);
             _transactionHandler.HandleOrderRequest(updateRequest);
             Assert.AreEqual(OrderRequestStatus.Processed, updateRequest.Status);
             Assert.IsTrue(updateRequest.Response.IsSuccess);
@@ -1051,7 +1051,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
             var orderRequest = new SubmitOrderRequest(OrderType.Limit, security.Type, security.Symbol, 1000, 0, 1.11m, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -1093,7 +1093,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
             var orderRequest = new SubmitOrderRequest(OrderType.Limit, security.Type, security.Symbol, 1000, 0, 1.11m, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -1138,7 +1138,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
                 var orderRequest = new SubmitOrderRequest(OrderType.Market, security.Type, security.Symbol, 1000, 0,
                     1.11m, DateTime.Now, "");
 
-                // Mock the the order processor
+                // Mock the order processor
                 var orderProcessorMock = new Mock<IOrderProcessor>();
                 orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>()))
                     .Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
@@ -1224,7 +1224,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
             var orderRequest = new SubmitOrderRequest(OrderType.Market, security.Type, security.Symbol, 1000, 0, 1.11m, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -1265,7 +1265,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
             var orderRequest = new SubmitOrderRequest(OrderType.Market, security.Type, security.Symbol, 1000, 0, 1.11m, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -1304,7 +1304,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
             var orderRequest = new SubmitOrderRequest(OrderType.Limit, security.Type, security.Symbol, 1000, 0, 1.11m, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -1340,7 +1340,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
             var orderRequest = new SubmitOrderRequest(OrderType.Limit, security.Type, security.Symbol, 1000, 0, 1.11m, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -1555,7 +1555,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
             var orderRequest = new SubmitOrderRequest(OrderType.Market, security.Type, security.Symbol, 1000, 0, 1.11m, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -1592,7 +1592,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
             var orderRequest = new SubmitOrderRequest(OrderType.Market, security.Type, security.Symbol, 1000, 0, 1.11m, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -1635,7 +1635,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
             var orderRequest = new SubmitOrderRequest(OrderType.Market, security.Type, security.Symbol, 1000, 0, 1.11m, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -1682,7 +1682,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
             var orderRequest = new SubmitOrderRequest(OrderType.Market, security.Type, security.Symbol, 1000, 0, 1.11m, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -1729,7 +1729,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
             var orderRequest = new SubmitOrderRequest(OrderType.Market, security.Type, security.Symbol, 1000, 0, 1.11m, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -1793,7 +1793,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
             var orderRequest = new SubmitOrderRequest(OrderType.Market, security.Type, security.Symbol, 1000, 0, 1.11m, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -1826,7 +1826,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
             var orderRequest = new SubmitOrderRequest(OrderType.Limit, security.Type, security.Symbol, 1000, 0, 1.11m, DateTime.Now, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
@@ -1953,7 +1953,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             {
                 CallBase = true
             };
-            var cashBalance = mock.Setup(m => m.GetCashBalance()).Returns(new List<CashAmount>());
+            mock.Setup(m => m.GetCashBalance()).Returns(new List<CashAmount>());
             mock.Setup(m => m.IsConnected).Returns(true);
             mock.Setup(m => m.ShouldPerformCashSync(It.IsAny<DateTime>())).Returns(true);
 
@@ -2109,7 +2109,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             security.SetMarketPrice(new Tick(DateTime.Now, security.Symbol, price, price, price));
             var orderRequest = new SubmitOrderRequest(OrderType.Market, security.Type, security.Symbol, -1000, 0, 1.11m, DateTime.UtcNow, "");
 
-            // Mock the the order processor
+            // Mock the order processor
             var orderProcessorMock = new Mock<IOrderProcessor>();
             orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
             _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
