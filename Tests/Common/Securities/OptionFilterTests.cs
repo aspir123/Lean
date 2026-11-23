@@ -34,7 +34,6 @@ namespace QuantConnect.Tests.Common.Securities
         [TestCaseSource(nameof(FiltersStrikeRangeTests))]
         public void FiltersStrikeRange(decimal underlyingPrice, Symbol[] symbols, int filteredNumber)
         {
-            var expiry = new DateTime(2016, 03, 04);
             var underlying = new Tick { Value = underlyingPrice, Time = new DateTime(2016, 02, 26) };
 
             Func<OptionFilterUniverse, OptionFilterUniverse> universeFunc = universe => universe
@@ -52,7 +51,7 @@ namespace QuantConnect.Tests.Common.Securities
             var canonical = symbols[0].Canonical;
             var option = CreateOptionSecurity(canonical);
 
-            var filterUniverse = new OptionFilterUniverse(option, data, underlying, underlyingScaleFactor);
+            var filterUniverse = new OptionFilterUniverse(option, data.ToList(), underlying, underlyingScaleFactor);
             var filtered = filter.Filter(filterUniverse).ToList();
             Assert.AreEqual(filteredNumber, filtered.Count);
             Assert.AreEqual(symbols[3], filtered[0].Symbol);
@@ -100,7 +99,7 @@ namespace QuantConnect.Tests.Common.Securities
             var option = CreateOptionSecurity(canonical);
 
             var data = symbols.Select(x => new OptionUniverse() { Symbol = x });
-            var filterUniverse = new OptionFilterUniverse(option, data, underlying);
+            var filterUniverse = new OptionFilterUniverse(option, data.ToList(), underlying);
             var filtered = filter.Filter(filterUniverse).ToList();
             Assert.AreEqual(underlyingPrice == 8 ? 5 : 4, filtered.Count);
             Assert.AreEqual(symbols[1], filtered[0].Symbol);
@@ -147,7 +146,7 @@ namespace QuantConnect.Tests.Common.Securities
             var option = CreateOptionSecurity(canonical);
 
             var data = symbols.Select(x => new OptionUniverse() { Symbol = x });
-            var filterUniverse = new OptionFilterUniverse(option, data, underlying);
+            var filterUniverse = new OptionFilterUniverse(option, data.ToList(), underlying);
             var filtered = filter.Filter(filterUniverse).ToList();
             Assert.AreEqual(3, filtered.Count);
             Assert.AreEqual(symbols[5], filtered[0].Symbol);
@@ -181,7 +180,7 @@ namespace QuantConnect.Tests.Common.Securities
             var option = CreateOptionSecurity(canonical);
 
             var data = symbols.Select(x => new OptionUniverse() { Symbol = x });
-            var filterUniverse = new OptionFilterUniverse(option, data, underlying);
+            var filterUniverse = new OptionFilterUniverse(option, data.ToList(), underlying);
             var filtered = filter.Filter(filterUniverse).ToList();
             Assert.AreEqual(0, filtered.Count);
         }
@@ -220,7 +219,7 @@ namespace QuantConnect.Tests.Common.Securities
             var option = CreateOptionSecurity(canonical);
 
             var data = symbols.Select(x => new OptionUniverse() { Symbol = x });
-            var filterUniverse = new OptionFilterUniverse(option, data, underlying);
+            var filterUniverse = new OptionFilterUniverse(option, data.ToList(), underlying);
             var filtered = filter.Filter(filterUniverse).ToList();
             Assert.AreEqual(3, filtered.Count);
             Assert.AreEqual(symbols[2], filtered[0].Symbol);
@@ -254,7 +253,7 @@ namespace QuantConnect.Tests.Common.Securities
             var option = CreateOptionSecurity(canonical);
 
             var data = symbols.Select(x => new OptionUniverse() { Symbol = x });
-            var filterUniverse = new OptionFilterUniverse(option, data, underlying);
+            var filterUniverse = new OptionFilterUniverse(option, data.ToList(), underlying);
             var filtered = filter.Filter(filterUniverse).ToList();
             Assert.AreEqual(0, filtered.Count);
         }
@@ -279,7 +278,7 @@ namespace QuantConnect.Tests.Common.Securities
             var option = CreateOptionSecurity(canonical);
 
             var data = symbols.Select(x => new OptionUniverse() { Symbol = x });
-            var filterUniverse = new OptionFilterUniverse(option, data, underlying);
+            var filterUniverse = new OptionFilterUniverse(option, data.ToList(), underlying);
             var filtered = filter.Filter(filterUniverse).ToList();
             Assert.AreEqual(0, filtered.Count);
         }
@@ -316,14 +315,17 @@ namespace QuantConnect.Tests.Common.Securities
             var option = CreateOptionSecurity(canonical);
 
             var data = symbols.Select(x => new OptionUniverse() { Symbol = x });
-            var filterUniverse = new OptionFilterUniverse(option, data, underlying);
+            var filterUniverse = new OptionFilterUniverse(option, data.ToList(), underlying);
             var filtered = filter.Filter(filterUniverse).ToList();
-            Assert.AreEqual(5, filtered.Count);
+            // 2016-02-26 is a Friday: the weekend expiries 8 and 9 days out count on their last trading date, Friday 7 days out
+            Assert.AreEqual(7, filtered.Count);
             Assert.AreEqual(symbols[3], filtered[0].Symbol);
             Assert.AreEqual(symbols[4], filtered[1].Symbol);
             Assert.AreEqual(symbols[5], filtered[2].Symbol);
             Assert.AreEqual(symbols[6], filtered[3].Symbol);
             Assert.AreEqual(symbols[7], filtered[4].Symbol);
+            Assert.AreEqual(symbols[8], filtered[5].Symbol);
+            Assert.AreEqual(symbols[9], filtered[6].Symbol);
         }
 
         [Test]
@@ -347,7 +349,7 @@ namespace QuantConnect.Tests.Common.Securities
             var option = CreateOptionSecurity(canonical);
 
             var data = symbols.Select(x => new OptionUniverse() { Symbol = x });
-            var filterUniverse = new OptionFilterUniverse(option, data, underlying);
+            var filterUniverse = new OptionFilterUniverse(option, data.ToList(), underlying);
             var filtered = filter.Filter(filterUniverse).ToList();
 
             // Expiry range is 0 to 5 days, so 6 days times 3 strikes per day
@@ -397,7 +399,7 @@ namespace QuantConnect.Tests.Common.Securities
             var option = CreateOptionSecurity(canonical);
 
             var data = symbols.Select(x => new OptionUniverse() { Symbol = x });
-            var filtered = filter.Filter(new OptionFilterUniverse(option, data, underlying)).ToList();
+            var filtered = filter.Filter(new OptionFilterUniverse(option, data.ToList(), underlying)).ToList();
             Assert.AreEqual(3, filtered.Count);
             Assert.AreEqual(symbols[5], filtered[0].Symbol);
             Assert.AreEqual(symbols[6], filtered[1].Symbol);
@@ -442,7 +444,7 @@ namespace QuantConnect.Tests.Common.Securities
             var option = CreateOptionSecurity(canonical);
 
             var data = symbols.Select(x => new OptionUniverse() { Symbol = x });
-            var filtered = filter.Filter(new OptionFilterUniverse(option, data, underlying)).ToList();
+            var filtered = filter.Filter(new OptionFilterUniverse(option, data.ToList(), underlying)).ToList();
             Assert.AreEqual(3, filtered.Count);
             Assert.AreEqual(symbols[5], filtered[0].Symbol);
             Assert.AreEqual(symbols[6], filtered[1].Symbol);
@@ -483,7 +485,7 @@ namespace QuantConnect.Tests.Common.Securities
             var option = CreateOptionSecurity(canonical);
 
             var data = symbols.Select(x => new OptionUniverse() { Symbol = x });
-            var filtered = filter.Filter(new OptionFilterUniverse(option, data, underlying)).ToList();
+            var filtered = filter.Filter(new OptionFilterUniverse(option, data.ToList(), underlying)).ToList();
             Assert.AreEqual(8, filtered.Count);
         }
 
@@ -521,7 +523,7 @@ namespace QuantConnect.Tests.Common.Securities
             var option = CreateOptionSecurity(canonical);
 
             var data = symbols.Select(x => new OptionUniverse() { Symbol = x });
-            var filterUniverse = new OptionFilterUniverse(option, data, underlying);
+            var filterUniverse = new OptionFilterUniverse(option, data.ToList(), underlying);
             var filtered = filter.Filter(filterUniverse).ToList();
             Assert.AreEqual(10, filtered.Count);
         }
@@ -560,7 +562,7 @@ namespace QuantConnect.Tests.Common.Securities
             var option = CreateOptionSecurity(canonical);
 
             var data = symbols.Select(x => new OptionUniverse() { Symbol = x });
-            var filtered = filter.Filter(new OptionFilterUniverse(option, data, underlying)).ToList();
+            var filtered = filter.Filter(new OptionFilterUniverse(option, data.ToList(), underlying)).ToList();
             Assert.AreEqual(4, filtered.Count);
         }
 
@@ -598,7 +600,7 @@ namespace QuantConnect.Tests.Common.Securities
             var option = CreateOptionSecurity(canonical);
 
             var data = symbols.Select(x => new OptionUniverse() { Symbol = x });
-            var filterUniverse = new OptionFilterUniverse(option, data, underlying);
+            var filterUniverse = new OptionFilterUniverse(option, data.ToList(), underlying);
             var filtered = filter.Filter(filterUniverse).ToList();
             Assert.AreEqual(3, filtered.Count);
         }
@@ -653,7 +655,7 @@ def set_filter(universe: OptionFilterUniverse) -> OptionFilterUniverse:
             var option = CreateOptionSecurity(canonical);
 
             var data = symbols.Select(x => new OptionUniverse() { Symbol = x });
-            var filterUniverse = new OptionFilterUniverse(option, data, underlying);
+            var filterUniverse = new OptionFilterUniverse(option, data.ToList(), underlying);
             var filtered = filter.Filter(filterUniverse).ToList();
             Assert.AreEqual(5, filtered.Count);
         }

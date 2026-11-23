@@ -147,6 +147,10 @@ namespace QuantConnect.Securities
         /// <returns>Bool true if contains this symbol pair</returns>
         public override bool ContainsKey(Symbol symbol)
         {
+            if (ReferenceEquals(symbol, null))
+            {
+                return false;
+            }
             lock (_securityManager)
             {
                 return _completeSecuritiesCollection.ContainsKey(symbol);
@@ -192,7 +196,7 @@ namespace QuantConnect.Securities
         }
 
         /// <summary>
-        /// Remove a key value of of symbol-securities from the collections.
+        /// Remove a key value of symbol-securities from the collections.
         /// </summary>
         /// <remarks>IDictionary implementation</remarks>
         /// <param name="pair">Key Value pair of symbol-security to remove</param>
@@ -252,6 +256,11 @@ namespace QuantConnect.Securities
         /// <returns>True on successfully locating the security object</returns>
         public override bool TryGetValue(Symbol symbol, out Security security)
         {
+            if (ReferenceEquals(symbol, null))
+            {
+                security = null;
+                return false;
+            }
             lock (_securityManager)
             {
                 return _completeSecuritiesCollection.TryGetValue(symbol, out security);

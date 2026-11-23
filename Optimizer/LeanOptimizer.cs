@@ -21,6 +21,7 @@ using QuantConnect.Configuration;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
+using QuantConnect.Optimizer.Analysis;
 using QuantConnect.Optimizer.Objectives;
 using QuantConnect.Optimizer.Parameters;
 using QuantConnect.Optimizer.Strategies;
@@ -40,6 +41,9 @@ namespace QuantConnect.Optimizer
         private int _failedBacktest;
         private int _completedBacktest;
         private volatile bool _disposed;
+
+        // Per-backtest metrics extracted in NewResult so we don't retain the full backtest JSON.
+        private readonly List<OptimizationBacktestMetrics> _completedBacktests = new();
 
         /// <summary>
         /// The total completed backtests count
@@ -183,6 +187,29 @@ namespace QuantConnect.Optimizer
 
             // we clean up before we send an update so that the runtime stats are updated
             CleanUpRunningInstance();
+
+            // Set Analysis before ProcessUpdate so SendUpdate can upload it; guarded so analyzer failure never breaks the optimization.
+            if (result != null)
+            {
+                try
+                {
+                    // Snapshot under the lock so a late NewResult on another thread can't mutate the list mid-enumeration.
+                    List<OptimizationBacktestMetrics> backtestsSnapshot;
+                    lock (_completedBacktests)
+                    {
+                        backtestsSnapshot = new List<OptimizationBacktestMetrics>(_completedBacktests);
+                    }
+                    var parameters = new OptimizationAnalysisRunParameters(
+                        backtestsSnapshot,
+                        NodePacket.OptimizationParameters);
+                    result.Analysis = new OptimizationAnalyzer().Run(parameters);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Error running optimization analysis");
+                }
+            }
+
             ProcessUpdate(forceSend: true);
 
             Ended?.Invoke(this, result);
@@ -197,7 +224,7 @@ namespace QuantConnect.Optimizer
         protected abstract string RunLean(ParameterSet parameterSet, string backtestName);
 
         /// <summary>
-        /// Get's a new backtest name
+        /// Gets a new backtest name
         /// </summary>
         protected virtual string GetBacktestName(ParameterSet parameterSet)
         {
@@ -244,6 +271,17 @@ namespace QuantConnect.Optimizer
                 {
                     Interlocked.Increment(ref _completedBacktest);
                     result = new OptimizationResult(jsonBacktestResult, parameterSet, backtestId);
+                }
+
+                // Extract metrics now and drop the heavy JSON; null results (invalid parameters) are skipped.
+                var metrics = OptimizationBacktestMetrics.ExtractFrom(backtestId, parameterSet, jsonBacktestResult);
+                if (metrics != null)
+                {
+                    // Backtest results can arrive on different threads; guard _completedBacktests with its own lock.
+                    lock (_completedBacktests)
+                    {
+                        _completedBacktests.Add(metrics);
+                    }
                 }
 
                 // always notify the strategy
@@ -353,8 +391,7 @@ namespace QuantConnect.Optimizer
             {
                 foreach (var backtestId in RunningParameterSetForBacktest.Keys)
                 {
-                    ParameterSet parameterSet;
-                    if (RunningParameterSetForBacktest.TryRemove(backtestId, out parameterSet))
+                    if (RunningParameterSetForBacktest.TryRemove(backtestId, out _))
                     {
                         Interlocked.Increment(ref _failedBacktest);
                         try
@@ -417,29 +454,50 @@ namespace QuantConnect.Optimizer
                     return;
                 }
 
-                try
+                List<ParameterSet> failedParameterSets = null;
+                do
                 {
-                    var backtestName = GetBacktestName(parameterSet);
-                    var backtestId = RunLean(parameterSet, backtestName);
+                    string backtestId = null;
+                    try
+                    {
+                        backtestId = RunLean(parameterSet, GetBacktestName(parameterSet));
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error($"LeanOptimizer.LaunchLeanForParameterSet({GetLogDetails()}): Error encountered while placing optimization message into the queue: {ex.Message}");
+                    }
 
                     if (!string.IsNullOrEmpty(backtestId))
                     {
                         Log.Trace($"LeanOptimizer.LaunchLeanForParameterSet({GetLogDetails()}): launched backtest '{backtestId}' with parameters '{parameterSet}'");
                         RunningParameterSetForBacktest.TryAdd(backtestId, parameterSet);
+                        break;
                     }
-                    else
+
+                    Interlocked.Increment(ref _failedBacktest);
+                    Log.Error($"LeanOptimizer.LaunchLeanForParameterSet({GetLogDetails()}): Initial/null optimization compute job could not be placed into the queue");
+                    (failedParameterSets ??= new List<ParameterSet>()).Add(parameterSet);
+                }
+                // the failed launch left its slot free: fill it with the next pending parameter set, which we do before
+                // notifying the strategy of the failures so FIFO is respected, else pending work could be discarded
+                while (PendingParameterSet.TryDequeue(out parameterSet));
+
+                try
+                {
+                    if (failedParameterSets != null)
                     {
-                        Interlocked.Increment(ref _failedBacktest);
-                        // always notify the strategy
-                        Strategy.PushNewResults(new OptimizationResult(null, parameterSet, backtestId));
-                        Log.Error($"LeanOptimizer.LaunchLeanForParameterSet({GetLogDetails()}): Initial/null optimization compute job could not be placed into the queue");
+                        foreach (var failedParameterSet in failedParameterSets)
+                        {
+                            // always notify the strategy
+                            Strategy.PushNewResults(new OptimizationResult(null, failedParameterSet, null));
+                        }
                     }
 
                     ProcessUpdate();
                 }
                 catch (Exception ex)
                 {
-                    Log.Error($"LeanOptimizer.LaunchLeanForParameterSet({GetLogDetails()}): Error encountered while placing optimization message into the queue: {ex.Message}");
+                    Log.Error($"LeanOptimizer.LaunchLeanForParameterSet({GetLogDetails()}): Error encountered while notifying the strategy of failed backtests: {ex.Message}");
                 }
             }
         }

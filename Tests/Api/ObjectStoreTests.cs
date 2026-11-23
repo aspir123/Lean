@@ -18,23 +18,63 @@ using System.Collections.Generic;
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using QuantConnect.Api;
 
 namespace QuantConnect.Tests.API
 {
     [TestFixture, Explicit("Requires configured api access and available backtest node to run on"), Parallelizable(ParallelScope.Fixtures)]
-    public class ObjectStoreTests: ApiTestBase
+    public class ObjectStoreTests : ApiTestBase
     {
-        private const string _key = "/Ricardo";
+        private const string _ciTestFolder = "/CI_TEST";
+        // Concurrent runs share the organization's object store, so each test writes under a key of its own
+        private const string _temporaryKeysFolder = "/CI_TEST_TEMPORARY";
         private readonly byte[] _data = new byte[3] { 1, 2, 3 };
+
+        private static readonly string[] _keysToSetUp = new[]
+        {
+            "/filename.zip",
+            "/mm_test.csv",
+            "/model",
+            "/trades_test.json",
+            "/profile_results.json",
+            "/CustomData/placeholder.txt",
+            "/log.txt",
+            "/l1_model.p",
+            "/latency_1_False.txt",
+            "/portfolio-targets2.csv",
+            "/Regressor",
+            "/example_data_2.zip"
+        };
+
+        [OneTimeSetUp]
+        public void SetUpObjectStoreFiles()
+        {
+            foreach (var key in _keysToSetUp)
+            {
+                var fullKey = _ciTestFolder + key;
+                if (!ApiClient.GetObjectStoreProperties(TestOrganization, fullKey).Success)
+                {
+                    ApiClient.SetObjectStore(TestOrganization, fullKey, _data);
+                }
+            }
+        }
 
         [TestCaseSource(nameof(GetObjectStoreWorksAsExpectedTestCases))]
         public void GetObjectStoreWorksAsExpected(string testName, List<string> keys, bool isSuccessExpected)
         {
             var path = Directory.GetCurrentDirectory() + "/StoreObjectFolder/";
+            var finish = DateTime.UtcNow.AddMinutes(6);
             var result = ApiClient.GetObjectStore(TestOrganization, keys, path);
             if (isSuccessExpected)
             {
+                // Under load the download url can take longer than the client polls for it, a new request can get it sooner.
+                // Each call waits up to 5 minutes for its url, so a case can take up to 11: the workflow's hang timeout allows 12
+                while (!result && DateTime.UtcNow < finish)
+                {
+                    Thread.Sleep(5000);
+                    result = ApiClient.GetObjectStore(TestOrganization, keys, path);
+                }
                 Assert.IsTrue(result);
                 DirectoryAssert.Exists(path);
                 Assert.IsTrue(keys.Where(x => File.Exists(path + x) || Directory.Exists(path + x)).Any()); // For some test cases, just one of the keys is present in the Object Store.
@@ -45,12 +85,12 @@ namespace QuantConnect.Tests.API
             }
         }
 
-        [TestCase("/filename.zip", true)]
-        [TestCase("/orats_2024-02-32.json", false)]
-        [TestCase("/mrm8488", false)]
-        [TestCase("/mm_test.csv", true)]
-        [TestCase("/model", true)]
-        [TestCase("/trades_test.json", true)]
+        [TestCase(_ciTestFolder + "/filename.zip", true)]
+        [TestCase(_ciTestFolder + "/orats_2024-02-32.json", false)]
+        [TestCase(_ciTestFolder + "/mrm8488", false)]
+        [TestCase(_ciTestFolder + "/mm_test.csv", true)]
+        [TestCase(_ciTestFolder + "/model", true)]
+        [TestCase(_ciTestFolder + "/trades_test.json", true)]
         public void GetObjectStorePropertiesWorksAsExpected(string key, bool isSuccessExpected)
         {
             var result = ApiClient.GetObjectStoreProperties(TestOrganization, key);
@@ -69,43 +109,60 @@ namespace QuantConnect.Tests.API
         [Test]
         public void SetObjectStoreWorksAsExpected()
         {
-            var result = ApiClient.DeleteObjectStore(TestOrganization, _key);
-            Assert.IsFalse(result.Success);
+            var key = $"{_temporaryKeysFolder}/{Guid.NewGuid():N}";
+            try
+            {
+                var result = ApiClient.DeleteObjectStore(TestOrganization, key);
+                Assert.IsFalse(result.Success);
 
-            result = ApiClient.SetObjectStore(TestOrganization, _key, _data);
-            Assert.IsTrue(result.Success);
+                result = ApiClient.SetObjectStore(TestOrganization, key, _data);
+                Assert.IsTrue(result.Success);
 
-            result = ApiClient.DeleteObjectStore(TestOrganization, _key);
-            Assert.IsTrue(result.Success);
+                result = ApiClient.DeleteObjectStore(TestOrganization, key);
+                Assert.IsTrue(result.Success);
+            }
+            finally
+            {
+                ApiClient.DeleteObjectStore(TestOrganization, key);
+            }
         }
 
         [Test]
         public void DeleteObjectStoreWorksAsExpected()
         {
-            var result = ApiClient.SetObjectStore(TestOrganization, _key + "/test1.txt", _data);
-            var result2 = ApiClient.SetObjectStore(TestOrganization, _key + "/test2.txt", _data);
-            Assert.IsTrue(result.Success);
-            var objectsBefore = ApiClient.ListObjectStore(TestOrganization, _key);
-            var stringRepresentation = objectsBefore.ToString();
-            Assert.IsTrue(ApiTestBase.IsValidJson(stringRepresentation));
-            var numberOfObjectsBefore = objectsBefore.Objects.Count;
-            var totalSizeBefore = objectsBefore.Objects.Select(o => o.Size).Sum();
-
-            result = ApiClient.DeleteObjectStore(TestOrganization, _key + "/test1.txt");
-            Assert.IsTrue(result.Success);
-
-            ListObjectStoreResponse objectsAfter;
-            var time = DateTime.UtcNow;
-            do
+            var key = $"{_temporaryKeysFolder}/{Guid.NewGuid():N}";
+            try
             {
-                objectsAfter = ApiClient.ListObjectStore(TestOrganization, _key);
-            } while (objectsAfter.Objects.Count == numberOfObjectsBefore && DateTime.UtcNow < time.AddMinutes(10));
+                var result = ApiClient.SetObjectStore(TestOrganization, key + "/test1.txt", _data);
+                ApiClient.SetObjectStore(TestOrganization, key + "/test2.txt", _data);
+                Assert.IsTrue(result.Success);
+                var objectsBefore = ApiClient.ListObjectStore(TestOrganization, key);
+                var stringRepresentation = objectsBefore.ToString();
+                Assert.IsTrue(ApiTestBase.IsValidJson(stringRepresentation));
+                var numberOfObjectsBefore = objectsBefore.Objects.Count;
+                var totalSizeBefore = objectsBefore.Objects.Select(o => o.Size).Sum();
 
-            var totalSizeAfter = objectsAfter.Objects.Select(o => o.Size).Sum();
-            Assert.IsTrue(totalSizeAfter < totalSizeBefore);
+                result = ApiClient.DeleteObjectStore(TestOrganization, key + "/test1.txt");
+                Assert.IsTrue(result.Success);
 
-            result = ApiClient.DeleteObjectStore(TestOrganization, _key);
-            Assert.IsTrue(result.Success);
+                ListObjectStoreResponse objectsAfter;
+                var time = DateTime.UtcNow;
+                do
+                {
+                    Thread.Sleep(1000);
+                    objectsAfter = ApiClient.ListObjectStore(TestOrganization, key);
+                } while (objectsAfter.Objects.Count == numberOfObjectsBefore && DateTime.UtcNow < time.AddMinutes(10));
+
+                var totalSizeAfter = objectsAfter.Objects.Select(o => o.Size).Sum();
+                Assert.IsTrue(totalSizeAfter < totalSizeBefore);
+
+                result = ApiClient.DeleteObjectStore(TestOrganization, key);
+                Assert.IsTrue(result.Success);
+            }
+            finally
+            {
+                ApiClient.DeleteObjectStore(TestOrganization, key);
+            }
         }
 
         [Test]
@@ -119,21 +176,40 @@ namespace QuantConnect.Tests.API
             Assert.AreEqual(path, result.Path);
         }
 
+        /// <summary>
+        /// object/list flags the directories it lists and reports the page it answered with
+        /// </summary>
+        [Test]
+        public void ListObjectStoreReportsFoldersAndPages()
+        {
+            var result = ApiClient.ListObjectStore(TestOrganization, _ciTestFolder);
+            Assert.IsTrue(result.Success, $"Error listing the object store: {string.Join(", ", result.Errors)}");
+            Assert.IsNotEmpty(result.Objects);
+            Assert.GreaterOrEqual(result.TotalPages, 1, "The listing is documented to be paginated");
+            Assert.LessOrEqual(result.Page, result.TotalPages);
+
+            var folder = result.Objects.Single(x => x.Key.Contains("CustomData", StringComparison.Ordinal));
+            Assert.IsTrue(folder.IsFolder, "The fixture stores a file under CustomData, so it is listed as a folder");
+
+            var file = result.Objects.Single(x => x.Key.Contains("filename.zip", StringComparison.Ordinal));
+            Assert.IsFalse(file.IsFolder);
+        }
+
         private static object[] GetObjectStoreWorksAsExpectedTestCases =
         {
-            new object[] { "Two keys present", new List<string> { "/trades_test.json", "/profile_results.json" }, true},
+            new object[] { "Two keys present", new List<string> { _ciTestFolder + "/trades_test.json", _ciTestFolder + "/profile_results.json" }, true},
             new object[] { "No key is given", new List<string> {}, false},
-            new object[] { "One key is present and the other one not", new List<string> { "/trades_test.json", "/orats_2024-02-32.json" }, true},
-            new object[] { "The key is not present", new List<string> { "/orats_2024-02-32.json" }, false},
-            new object[] { "The type of the object store file is directory", new List<string> { "/CustomData" }, true},
-            new object[] { "The type of the object store file is text/plain", new List<string> { "/log.txt" }, true},
-            new object[] { "The type of the object store file is application/octet-stream", new List<string> { "/model" }, true},
-            new object[] { "The type of the object store file is P", new List<string> { "/l1_model.p" }, true},
+            new object[] { "One key is present and the other one not", new List<string> { _ciTestFolder + "/trades_test.json", _ciTestFolder + "/orats_2024-02-32.json" }, true},
+            new object[] { "The key is not present", new List<string> { _ciTestFolder + "/orats_2024-02-32.json" }, false},
+            new object[] { "The type of the object store file is directory", new List<string> { _ciTestFolder + "/CustomData" }, true},
+            new object[] { "The type of the object store file is text/plain", new List<string> { _ciTestFolder + "/log.txt" }, true},
+            new object[] { "The type of the object store file is application/octet-stream", new List<string> { _ciTestFolder + "/model" }, true},
+            new object[] { "The type of the object store file is P", new List<string> { _ciTestFolder + "/l1_model.p" }, true},
             new object[] { "Heavy object store files", new List<string> {
-                "/latency_1_False.txt",
-                "/portfolio-targets2.csv",
-                "/Regressor",
-                "/example_data_2.zip"
+                _ciTestFolder + "/latency_1_False.txt",
+                _ciTestFolder + "/portfolio-targets2.csv",
+                _ciTestFolder + "/Regressor",
+                _ciTestFolder + "/example_data_2.zip"
             }, true}
         };
     }

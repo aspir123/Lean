@@ -340,7 +340,7 @@ namespace QuantConnect.Data
                     return value.GetData();
                 }
                 CheckForImplicitlyCreatedSymbol(symbol);
-                throw new KeyNotFoundException($"'{symbol}' wasn't found in the Slice object, likely because there was no-data at this moment in time and it wasn't possible to fillforward historical data. Please check the data exists before accessing it with data.ContainsKey(\"{symbol}\")");
+                throw new KeyNotFoundException(Messages.ExtendedDictionary.KeyNotFoundDueToNoData(this, symbol));
             }
             set
             {
@@ -495,7 +495,7 @@ namespace QuantConnect.Data
                         }
                         else
                         {
-                            foreach (var auxiliaryData in data.AuxilliaryData.Where(x => IsDataPointOfType(x, type, isPythonData)))
+                            foreach (var auxiliaryData in data.AuxiliaryData.Where(x => IsDataPointOfType(x, type, isPythonData)))
                             {
                                 dataDictionaryCache.MethodInfo.Invoke(dictionary, new object[] { data.Symbol, auxiliaryData });
                             }
@@ -527,20 +527,20 @@ namespace QuantConnect.Data
         /// <returns>True if this instance contains data for the symbol, false otherwise</returns>
         public override bool ContainsKey(Symbol symbol)
         {
-            return _data.Value.ContainsKey(symbol);
+            return !ReferenceEquals(symbol, null) && _data.Value.ContainsKey(symbol);
         }
 
         /// <summary>
         /// Gets the data associated with the specified symbol
         /// </summary>
         /// <param name="symbol">The symbol we want data for</param>
-        /// <param name="data">The data for the specifed symbol, or null if no data was found</param>
+        /// <param name="data">The data for the specified symbol, or null if no data was found</param>
         /// <returns>True if data was found, false otherwise</returns>
         public override bool TryGetValue(Symbol symbol, out dynamic data)
         {
             data = null;
             SymbolData symbolData;
-            if (_data.Value.TryGetValue(symbol, out symbolData))
+            if (!ReferenceEquals(symbol, null) && _data.Value.TryGetValue(symbol, out symbolData))
             {
                 data = symbolData.GetData();
                 return data != null;
@@ -582,7 +582,7 @@ namespace QuantConnect.Data
                 }
                 else
                 {
-                    // Should keep this._rawDataList last so that selected data points are not overriden
+                    // Should keep this._rawDataList last so that selected data points are not overridden
                     // while creating _data
                     othersDataList.AddRange(ourDataList);
                     AllData = othersDataList;
@@ -653,7 +653,7 @@ namespace QuantConnect.Data
                         break;
 
                     case MarketDataType.Auxiliary:
-                        symbolData.AuxilliaryData.Add(datum);
+                        symbolData.AuxiliaryData.Add(datum);
                         break;
 
                     default:
@@ -732,7 +732,7 @@ namespace QuantConnect.Data
 
         private IEnumerable<KeyValuePair<Symbol, BaseData>> GetKeyValuePairEnumerable()
         {
-            // this will not enumerate auxilliary data!
+            // this will not enumerate auxiliary data!
 
             foreach (var kvp in _data.Value)
             {
@@ -780,13 +780,13 @@ namespace QuantConnect.Data
             public TradeBar TradeBar;
             public QuoteBar QuoteBar;
             public readonly List<Tick> Ticks;
-            public readonly List<BaseData> AuxilliaryData;
+            public readonly List<BaseData> AuxiliaryData;
 
             public SymbolData(Symbol symbol)
             {
                 Symbol = symbol;
                 Ticks = new List<Tick>();
-                AuxilliaryData = new List<BaseData>();
+                AuxiliaryData = new List<BaseData>();
             }
 
             public dynamic GetData()

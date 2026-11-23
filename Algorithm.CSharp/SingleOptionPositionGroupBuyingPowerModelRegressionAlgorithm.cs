@@ -99,16 +99,16 @@ namespace QuantConnect.Algorithm.CSharp
                 // but then GetMaximumLotsForTargetBuyingPower will work with initial margin requirement so we make sure the resulting quantity
                 // can be ordered. In order to match this, we need to adjust the delta buying power by the difference between the initial margin
                 // requirement  and maintenance margin.
-                PerfomQuantityCalculations(positionGroup, security, expectedQuantity, deltaBuyingPower, increasing: true);
+                PerformQuantityCalculations(positionGroup, security, expectedQuantity, deltaBuyingPower, increasing: true);
 
                 // Test going towards the opposite side until liquidated:
                 // negative delta and expected quantity to reduce the position
                 deltaBuyingPower = -initialMarginPerUnit * expectedQuantity * 0.95m;
-                PerfomQuantityCalculations(positionGroup, security, -expectedQuantity, deltaBuyingPower, increasing: false);
+                PerformQuantityCalculations(positionGroup, security, -expectedQuantity, deltaBuyingPower, increasing: false);
             }
         }
 
-        private void PerfomQuantityCalculations(IPositionGroup positionGroup, Security security, int expectedQuantity,
+        private void PerformQuantityCalculations(IPositionGroup positionGroup, Security security, int expectedQuantity,
             decimal deltaBuyingPower, bool increasing)
         {
             var absQuantity = Math.Abs(positionGroup.Quantity);
@@ -162,7 +162,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 46957;
+        public long DataPoints => 47108;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -190,7 +190,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Net Profit", "-0.062%"},
             {"Sharpe Ratio", "-8.624"},
             {"Sortino Ratio", "0"},
-            {"Probabilistic Sharpe Ratio", "0.982%"},
+            {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "100%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
@@ -202,7 +202,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Tracking Error", "0.084"},
             {"Treynor Ratio", "-4.737"},
             {"Total Fees", "$19.50"},
-            {"Estimated Strategy Capacity", "$49000.00"},
+            {"Estimated Strategy Capacity", "$47000.00"},
             {"Lowest Capacity Asset", "GOOCV W78ZFMML4BUU|GOOCV VP83T1ZUHROL"},
             {"Portfolio Turnover", "0.45%"},
             {"Drawdown Recovery", "0"},

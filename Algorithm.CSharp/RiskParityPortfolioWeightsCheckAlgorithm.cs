@@ -54,7 +54,7 @@ namespace QuantConnect.DataLibrary.Tests
                 var weights = kvp.Value;
                 if (weights.Count < 2)
                 {
-                    throw new RegressionTestException($"Expected multiple different weigths from the PCM for {kvp.Key}");
+                    throw new RegressionTestException($"Expected multiple different weights from the PCM for {kvp.Key}");
                 }
             }
         }
@@ -68,13 +68,13 @@ namespace QuantConnect.DataLibrary.Tests
                 var result = base.DetermineTargetPercent(activeInsights);
                 foreach (var kvp in result)
                 {
-                    if (!Weights.TryGetValue(kvp.Key.Symbol, out var symbolWeigths))
+                    if (!Weights.TryGetValue(kvp.Key.Symbol, out var symbolWeights))
                     {
-                        symbolWeigths = new HashSet<double>();
-                        Weights[kvp.Key.Symbol] = symbolWeigths;
+                        symbolWeights = new HashSet<double>();
+                        Weights[kvp.Key.Symbol] = symbolWeights;
                     }
 
-                    symbolWeigths.Add(kvp.Value);
+                    symbolWeights.Add(kvp.Value);
                 }
 
                 return result;
@@ -122,7 +122,7 @@ namespace QuantConnect.DataLibrary.Tests
             {"Net Profit", "0.510%"},
             {"Sharpe Ratio", "0.265"},
             {"Sortino Ratio", "0.371"},
-            {"Probabilistic Sharpe Ratio", "39.108%"},
+            {"Probabilistic Sharpe Ratio", "38.927%"},
             {"Loss Rate", "58%"},
             {"Win Rate", "42%"},
             {"Profit-Loss Ratio", "0.75"},

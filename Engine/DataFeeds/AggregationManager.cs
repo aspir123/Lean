@@ -14,7 +14,6 @@
 */
 
 using QuantConnect.Data;
-using QuantConnect.Data.Common;
 using QuantConnect.Data.Consolidators;
 using QuantConnect.Data.Market;
 using QuantConnect.Lean.Engine.DataFeeds.Enumerators;
@@ -85,8 +84,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             {
                 if (enumerators.Count == 1)
                 {
-                    List<KeyValuePair<SubscriptionDataConfig, ScannableEnumerator<BaseData>>> output;
-                    return _enumerators.TryRemove(dataConfig.Symbol.ID, out output);
+                    return _enumerators.TryRemove(dataConfig.Symbol.ID, out _);
                 }
                 else
                 {

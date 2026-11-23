@@ -79,7 +79,7 @@ namespace QuantConnect.Tests.Indicators
             // Verify EndTime does not overflow when accessed before the first Update()
             Assert.DoesNotThrow(() =>
             {
-                var currentEndTime = session.EndTime;
+                _ = session.EndTime;
             });
 
             session.Update(new TradeBar(new DateTime(2025, 8, 25, 10, 0, 0), symbol, 100, 101, 99, 100, 1000, TimeSpan.FromHours(1)));
@@ -169,6 +169,49 @@ namespace QuantConnect.Tests.Indicators
 
             // Friday before Labor Day weekend -> next trading day is Tuesday (Sep 2, 2025)
             yield return new TestCaseData(new DateTime(2025, 8, 29, 10, 0, 0), new DateTime(2025, 9, 2));
+        }
+
+        [Test]
+        public void ManualDailyBarUpdateProducesOneConsolidationPerBar()
+        {
+            var symbol = Symbols.SPY;
+            var barCount = 20;
+            var exchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType);
+            var session = new Session(TickType.Trade, exchangeHours, symbol, barCount + 1);
+
+            var barDate = new DateTime(2025, 9, 2, 9, 30, 0);
+            for (var i = 0; i < barCount; i++)
+            {
+                session.Update(new TradeBar(barDate, symbol, 100 + i, 101 + i, 99 + i, 100 + i, 1000, Time.OneDay));
+                barDate = barDate.AddDays(1);
+                while (!exchangeHours.IsDateOpen(barDate.Date, false))
+                {
+                    barDate = barDate.AddDays(1);
+                }
+            }
+
+            Assert.AreEqual(barCount, session.Samples);
+        }
+
+        [Test]
+        public void GapDayDataPreservesCorrectTimestampAndContent()
+        {
+            var symbol = Symbols.SPY;
+            var exchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType);
+            var session = new Session(TickType.Trade, exchangeHours, symbol, 5);
+
+            var sep2 = new DateTime(2025, 9, 2, 9, 30, 0);
+            var sep4 = new DateTime(2025, 9, 4, 9, 30, 0);
+            var sep5 = new DateTime(2025, 9, 5, 9, 30, 0);
+
+            session.Update(new TradeBar(sep2, symbol, 100, 110, 90, 105, 1000, Time.OneDay));
+            session.Update(new TradeBar(sep4, symbol, 200, 210, 190, 205, 2000, Time.OneDay));
+            session.Update(new TradeBar(sep5, symbol, 300, 310, 290, 305, 3000, Time.OneDay));
+
+            Assert.AreEqual(sep4.Date, session[1].Time);
+            Assert.AreEqual(200, session[1].Open);
+            Assert.AreEqual(sep2.Date, session[2].Time);
+            Assert.AreEqual(100, session[2].Open);
         }
 
         private static Session GetSession(TickType tickType, int initialSize)

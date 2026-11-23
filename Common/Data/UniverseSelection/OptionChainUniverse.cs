@@ -20,6 +20,7 @@ using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using System.Collections.Generic;
 using QuantConnect.Securities.Option;
+using QuantConnect.Util;
 
 namespace QuantConnect.Data.UniverseSelection
 {
@@ -92,7 +93,7 @@ namespace QuantConnect.Data.UniverseSelection
         {
             var localEndTime = utcTime.ConvertFromUtc(Option.Exchange.TimeZone);
             // we will only update unique strikes when there is an exchange date change
-            _optionFilterUniverse.Refresh(data.Data.Cast<OptionUniverse>().ToList(), data.Underlying, localEndTime);
+            _optionFilterUniverse.Refresh(new CastingEnumerable<BaseData, OptionUniverse>(data.Data), data.Underlying, localEndTime);
 
             var results = Option.ContractFilter.Filter(_optionFilterUniverse);
 
@@ -125,8 +126,7 @@ namespace QuantConnect.Data.UniverseSelection
             // we update member reference in this case
             if (Securities.Any(x => x.Value.Security == security))
             {
-                Member member;
-                Securities.TryRemove(security.Symbol, out member);
+                Securities.TryRemove(security.Symbol, out _);
             }
 
             return Securities.TryAdd(security.Symbol, new Member(utcTime, security, isInternal));

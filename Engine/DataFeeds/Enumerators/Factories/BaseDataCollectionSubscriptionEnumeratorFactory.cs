@@ -33,7 +33,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators.Factories
         private IObjectStore _objectStore;
 
         /// <summary>
-        /// Instanciates a new <see cref="BaseDataCollectionSubscriptionEnumeratorFactory"/>
+        /// Instantiates a new <see cref="BaseDataCollectionSubscriptionEnumeratorFactory"/>
         /// </summary>
         /// <param name="objectStore">The object store to use</param>
         public BaseDataCollectionSubscriptionEnumeratorFactory(IObjectStore objectStore)
@@ -62,6 +62,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators.Factories
                 foreach (var date in request.TradableDaysInDataTimeZone)
                 {
                     var source = sourceFactory.GetSource(configuration, date, false);
+                    if (source == null)
+                    {
+                        // a null source is equivalent to an unreachable source: no data for this date, move to the next day
+                        continue;
+                    }
                     var factory = SubscriptionDataSourceReader.ForSource(source, dataCacheProvider, configuration, date, false, sourceFactory,
                         dataProvider, _objectStore);
                     var coarseFundamentalForDate = factory.Read(source);

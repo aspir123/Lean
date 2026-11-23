@@ -59,7 +59,7 @@ namespace QuantConnect.Data.UniverseSelection
         public HashSet<Symbol> Selected
         {
             get; set;
-        }
+        } = [];
 
         /// <summary>
         /// True if this universe filter can run async in the data stack
@@ -350,8 +350,7 @@ namespace QuantConnect.Data.UniverseSelection
         {
             if (CanRemoveMember(utcTime, security))
             {
-                Member member;
-                return Securities.TryRemove(security.Symbol, out member);
+                return Securities.TryRemove(security.Symbol, out _);
             }
             return false;
         }

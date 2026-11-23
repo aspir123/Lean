@@ -26,6 +26,7 @@ using QuantConnect.Securities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Python.Runtime;
 using QuantConnect.Algorithm;
 using QuantConnect.Python;
 using QuantConnect.Tests.Common.Data.UniverseSelection;
@@ -263,6 +264,17 @@ namespace QuantConnect.Tests.Algorithm.Framework.Alphas
         protected abstract string GetExpectedModelName(IAlphaModel model);
 
         /// <summary>
+        /// Gets the display string of the given enum value as rendered in the model's language:
+        /// Python models render enum values in the Python convention, e.g. Resolution.Daily as DAILY
+        /// </summary>
+        protected static string GetEnumString(Enum value, IAlphaModel model)
+        {
+            return model is AlphaModelPythonWrapper
+                ? value.ToString().ToSnakeCase(constant: true)
+                : value.ToString();
+        }
+
+        /// <summary>
         /// Provides derived types a chance to initialize anything special they require
         /// </summary>
         protected virtual void InitializeAlgorithm(QCAlgorithm algorithm)
@@ -343,7 +355,6 @@ namespace QuantConnect.Tests.Algorithm.Framework.Alphas
 
         private List<DateTime> GetSliceDateTimes(int maxCount)
         {
-            var i = 0;
             var sliceDateTimes = new List<DateTime>();
             var utcDateTime = Algorithm.StartDate;
 
@@ -367,7 +378,6 @@ namespace QuantConnect.Tests.Algorithm.Framework.Alphas
                     {
                         sliceDateTimes.Add(utcDateTime);
                     }
-                    i++;
                 }
             }
 

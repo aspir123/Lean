@@ -43,8 +43,15 @@ namespace QuantConnect.Orders.Fees
             {
                 { Market.USA, UnitedStatesFutureFees },
                 { Market.HKFE, HongKongFutureFees },
-                { Market.EUREX, EUREXFutureFees }
+                { Market.EUREX, EUREXFutureFees },
+                { Market.KRX, KoreaFutureFees }
             };
+
+        /// <summary>
+        /// Korea Exchange futures are charged a flat rate of the trade value, which already includes
+        /// the exchange, regulatory, clearing and carrying fees.
+        /// </summary>
+        private const decimal _koreaFutureFeeRate = 0.00004m;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ImmediateFillModel"/>
@@ -92,12 +99,11 @@ namespace QuantConnect.Orders.Fees
             switch (security.Type)
             {
                 case SecurityType.Forex:
-                    // get the total order value in the account currency
-                    var totalOrderValue = order.GetValue(security);
-                    var fee = Math.Abs(_forexCommissionRate*totalOrderValue);
-                    feeResult = Math.Max(_forexMinimumOrderFee, fee);
                     // IB Forex fees are all in USD
                     feeCurrency = Currencies.USD;
+                    var totalOrderValue = GetOrderValue(order, security, feeCurrency);
+                    var fee = Math.Abs(_forexCommissionRate*totalOrderValue);
+                    feeResult = Math.Max(_forexMinimumOrderFee, fee);
                     break;
 
                 case SecurityType.Option:
@@ -140,7 +146,7 @@ namespace QuantConnect.Orders.Fees
                     switch (market)
                     {
                         case Market.USA:
-                            equityFee = new EquityFee(Currencies.USD, feePerShare: 0.005m, minimumFee: 1, maximumFeeRate: 0.005m);
+                            equityFee = new EquityFee(Currencies.USD, feePerShare: 0.005m, minimumFee: 1, maximumFeeRate: 0.01m);
                             break;
                         case Market.India:
                             equityFee = new EquityFee(Currencies.INR, feePerShare: 0.01m, minimumFee: 6, maximumFeeRate: 20);
@@ -148,7 +154,23 @@ namespace QuantConnect.Orders.Fees
                         default:
                             throw new KeyNotFoundException(Messages.InteractiveBrokersFeeModel.UnexpectedEquityMarket(market));
                     }
-                    var tradeValue = Math.Abs(order.GetValue(security));
+                    // The maximum per order is a rate of the trade value in the fee currency, the security's quote currency
+                    decimal tradeValue;
+                    if (parameters.FillPrice.HasValue)
+                    {
+                        // A filled order is valued at its fill price
+                        tradeValue = quantity * Math.Abs(parameters.FillPrice.Value) * security.SymbolProperties.ContractMultiplier;
+                    }
+                    else if (order.Type is OrderType.Limit or OrderType.StopLimit or OrderType.LimitIfTouched or OrderType.ComboLegLimit)
+                    {
+                        // Before it fills, the order's own limit price bounds its fill
+                        tradeValue = Math.Abs(GetOrderValue(order, security, security.QuoteCurrency.Symbol));
+                    }
+                    else
+                    {
+                        // The others, such as triggered stops or combo limit legs priced against the combo's net limit, trade at the market price
+                        tradeValue = quantity * security.Price * security.SymbolProperties.ContractMultiplier;
+                    }
 
                     //Per share fees
                     var tradeFee = equityFee.FeePerShare * quantity;
@@ -158,7 +180,8 @@ namespace QuantConnect.Orders.Fees
                     var maximumPerOrder = equityFee.MaximumFeeRate * tradeValue;
                     if (tradeFee < equityFee.MinimumFee)
                     {
-                        tradeFee = equityFee.MinimumFee;
+                        // IBKR Pro Fixed charges the US maximum per order when it is below the minimum per order
+                        tradeFee = market == Market.USA ? Math.Min(equityFee.MinimumFee, maximumPerOrder) : equityFee.MinimumFee;
                     }
                     else if (tradeFee > maximumPerOrder)
                     {
@@ -171,9 +194,9 @@ namespace QuantConnect.Orders.Fees
                     break;
 
                 case SecurityType.Cfd:
-                    var value = Math.Abs(order.GetValue(security));
-                    feeResult = 0.00002m * value; // 0.002%
                     feeCurrency = security.QuoteCurrency.Symbol;
+                    var value = Math.Abs(GetOrderValue(order, security, feeCurrency));
+                    feeResult = 0.00002m * value; // 0.002%
 
                     var minimumFee = security.QuoteCurrency.Symbol switch
                     {
@@ -212,7 +235,6 @@ namespace QuantConnect.Orders.Fees
                 case OrderType.MarketOnOpen:
                 case OrderType.MarketOnClose:
                 case OrderType.Market:
-                    decimal securityPrice;
                     if (order.Direction == OrderDirection.Buy)
                     {
                         price = security.BidPrice;
@@ -376,6 +398,16 @@ namespace QuantConnect.Orders.Fees
 
             // let's add a 50% extra charge for exchange fees
             return new CashAmount(ibFeePerContract * 1.5m, security.QuoteCurrency.Symbol);
+        }
+
+        /// <summary>
+        /// Gets the fee for a single Korea Exchange future contract, a percentage of its trade value
+        /// in the contract quote currency
+        /// </summary>
+        private static CashAmount KoreaFutureFees(Security security)
+        {
+            var tradeValuePerContract = security.Price * security.SymbolProperties.ContractMultiplier;
+            return new CashAmount(_koreaFutureFeeRate * tradeValuePerContract, security.QuoteCurrency.Symbol);
         }
 
         private static CashAmount EUREXFutureFees(Security security)

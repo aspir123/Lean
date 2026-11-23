@@ -13,6 +13,7 @@
  * limitations under the License.
 */
 
+using System.ComponentModel;
 using System;
 using System.Collections;
 using System.Collections.Concurrent;
@@ -78,6 +79,18 @@ namespace QuantConnect
 
         private static readonly Dictionary<IntPtr, PythonActivator> PythonActivators
             = new Dictionary<IntPtr, PythonActivator>();
+
+        /// <summary>
+        /// Prefixes the given message with the provided algorithm time, producing the standard
+        /// timestamped format shared by algorithm logs and messages
+        /// </summary>
+        /// <param name="message">The message to prefix</param>
+        /// <param name="algorithmTime">The algorithm time to prefix the message with</param>
+        /// <returns>The message prefixed with the algorithm time</returns>
+        public static string PrefixWithAlgorithmTime(this string message, DateTime algorithmTime)
+        {
+            return $"{algorithmTime.ToStringInvariant(DateFormat.UI)} {message}";
+        }
 
         /// <summary>
         /// Maintains old behavior of NodaTime's (&lt; 2.0) daylight savings mapping.
@@ -502,6 +515,7 @@ namespace QuantConnect
         /// Extension method to get security price is 0 messages for users
         /// </summary>
         /// <remarks>The value of this method is normalization</remarks>
+        [EditorBrowsable(EditorBrowsableState.Never)]
         public static string GetZeroPriceMessage(this Symbol symbol)
         {
             return Messages.Extensions.ZeroPriceForSecurity(symbol);
@@ -1064,11 +1078,29 @@ namespace QuantConnect
         /// <param name="queue">queue object</param>
         public static void Clear<T>(this ConcurrentQueue<T> queue)
         {
-            T item;
-            while (queue.TryDequeue(out item))
+            while (queue.TryDequeue(out _))
             {
                 // NOP
             }
+        }
+
+        /// <summary>
+        /// Waits for the first item of a blocking collection and returns an enumerable that consumes every item, that first one included.
+        /// Returns null if the collection completes adding without an item.
+        /// </summary>
+        /// <remarks>Checking a consuming enumerable with Any() removes its first item from the collection and drops it, this method keeps it</remarks>
+        /// <typeparam name="T">The type of the items</typeparam>
+        /// <param name="collection">The collection a producer adds to and completes adding when done</param>
+        /// <returns>An enumerable that consumes every item of the collection, or null if the collection completed adding without an item</returns>
+        public static IEnumerable<T> GetConsumingEnumerableOrNull<T>(this BlockingCollection<T> collection)
+        {
+            // blocks until the first item arrives or the producer completes adding without an item
+            if (!collection.TryTake(out var first, Timeout.Infinite))
+            {
+                return null;
+            }
+
+            return collection.GetConsumingEnumerable().Prepend(first);
         }
 
         /// <summary>
@@ -1231,7 +1263,7 @@ namespace QuantConnect
         /// This makes the API similar for traditional and concurrent dictionaries.
         /// </summary>
         /// <typeparam name="K">Key type for dictionary</typeparam>
-        /// <typeparam name="V">Value type for dictonary</typeparam>
+        /// <typeparam name="V">Value type for dictionary</typeparam>
         /// <param name="dictionary">Dictionary object we're operating on</param>
         /// <param name="key">Key we want to add or update.</param>
         /// <param name="value">Value we want to set.</param>
@@ -1244,7 +1276,7 @@ namespace QuantConnect
         /// Extension method to automatically add/update lazy values in concurrent dictionary.
         /// </summary>
         /// <typeparam name="TKey">Key type for dictionary</typeparam>
-        /// <typeparam name="TValue">Value type for dictonary</typeparam>
+        /// <typeparam name="TValue">Value type for dictionary</typeparam>
         /// <param name="dictionary">Dictionary object we're operating on</param>
         /// <param name="key">Key we want to add or update.</param>
         /// <param name="addValueFactory">The function used to generate a value for an absent key</param>
@@ -1433,7 +1465,7 @@ namespace QuantConnect
         /// <returns>New instance with just 3 decimal places</returns>
         public static decimal TruncateTo3DecimalPlaces(this decimal value)
         {
-            // we will multiply by 1k bellow, if its bigger it will stack overflow
+            // we will multiply by 1k below, if its bigger it will stack overflow
             if (value >= decimal.MaxValue / 1000
                 || value <= decimal.MinValue / 1000
                 || value == 0)
@@ -1643,7 +1675,7 @@ namespace QuantConnect
         /// Extension method for faster string to Int32 conversion.
         /// </summary>
         /// <param name="str">String to be converted to positive Int32 value</param>
-        /// <remarks>Method makes some assuptions - always numbers, no "signs" +,- etc.</remarks>
+        /// <remarks>Method makes some assumptions - always numbers, no "signs" +,- etc.</remarks>
         /// <returns>Int32 value of the string</returns>
         public static int ToInt32(this string str)
         {
@@ -1662,7 +1694,7 @@ namespace QuantConnect
         /// Extension method for faster string to Int64 conversion.
         /// </summary>
         /// <param name="str">String to be converted to positive Int64 value</param>
-        /// <remarks>Method makes some assuptions - always numbers, no "signs" +,- etc.</remarks>
+        /// <remarks>Method makes some assumptions - always numbers, no "signs" +,- etc.</remarks>
         /// <returns>Int32 value of the string</returns>
         public static long ToInt64(this string str)
         {
@@ -1733,7 +1765,6 @@ namespace QuantConnect
             var csv = new List<string>(size);
 
             var last = -1;
-            var count = 0;
             var textDataField = false;
 
             for (var i = 0; i < str.Length; i++)
@@ -1747,7 +1778,6 @@ namespace QuantConnect
                 {
                     csv.Add(str.Substring(last + 1, (i - last)).Trim(' ', ','));
                     last = i;
-                    count++;
                 }
             }
 
@@ -2017,8 +2047,8 @@ namespace QuantConnect
             {
                 // Will subtract interval to 'dateTime' in the roundingTimeZone (using the same value type instance) to avoid issues with daylight saving time changes.
                 // GH issue 2368: subtracting interval to 'dateTime' in exchangeHours.TimeZone and converting back to roundingTimeZone
-                // caused the substraction to be neutralized by daylight saving time change, which caused an infinite loop situation in this loop.
-                // The issue also happens if substracting in roundingTimeZone and converting back to exchangeHours.TimeZone.
+                // caused the subtraction to be neutralized by daylight saving time change, which caused an infinite loop situation in this loop.
+                // The issue also happens if subtracting in roundingTimeZone and converting back to exchangeHours.TimeZone.
 
                 dateTimeInRoundingTimeZone -= interval;
                 roundedDateTimeInRoundingTimeZone = dateTimeInRoundingTimeZone.RoundDown(interval);
@@ -2147,7 +2177,7 @@ namespace QuantConnect
         /// Business day here is defined as any day of the week that is not saturday or sunday
         /// </summary>
         /// <param name="date">The date to be examined</param>
-        /// <returns>A bool indicating wether the datetime is a weekday or not</returns>
+        /// <returns>A bool indicating whether the datetime is a weekday or not</returns>
         public static bool IsCommonBusinessDay(this DateTime date)
         {
             return (date.DayOfWeek != DayOfWeek.Saturday && date.DayOfWeek != DayOfWeek.Sunday);
@@ -2189,7 +2219,7 @@ namespace QuantConnect
 
         /// <summary>
         /// Checks the specified type to see if it is a subclass of the <paramref name="possibleSuperType"/>. This method will
-        /// crawl up the inheritance heirarchy to check for equality using generic type definitions (if exists)
+        /// crawl up the inheritance hierarchy to check for equality using generic type definitions (if exists)
         /// </summary>
         /// <param name="type">The type to be checked as a subclass of <paramref name="possibleSuperType"/></param>
         /// <param name="possibleSuperType">The possible superclass of <paramref name="type"/></param>
@@ -2435,7 +2465,7 @@ namespace QuantConnect
         }
 
         /// <summary>
-        /// Get the first occurence of a string between two characters from another string
+        /// Get the first occurrence of a string between two characters from another string
         /// </summary>
         /// <param name="value">The original string</param>
         /// <param name="left">Left bound of the substring</param>
@@ -2798,6 +2828,7 @@ namespace QuantConnect
         /// <param name="order">The <see cref="Order"/> being converted</param>
         /// <param name="transactionManager">The transaction manager, <see cref="SecurityTransactionManager"/></param>
         /// <returns></returns>
+        [EditorBrowsable(EditorBrowsableState.Never)]
         public static OrderTicket ToOrderTicket(this Order order, SecurityTransactionManager transactionManager)
         {
             var limitPrice = 0m;
@@ -2863,7 +2894,8 @@ namespace QuantConnect
                 order.Time,
                 order.Tag,
                 order.Properties,
-                order.GroupOrderManager);
+                order.GroupOrderManager,
+                contingency: order.Contingency);
 
             submitOrderRequest.SetOrderId(order.Id);
             var orderTicket = new OrderTicket(transactionManager, submitOrderRequest);
@@ -3028,6 +3060,20 @@ namespace QuantConnect
         }
 
         /// <summary>
+        /// Gets a string representation of the given Python object and its type
+        /// to be used in user-facing messages, e.g. "'Daily' of type 'Resolution'"
+        /// </summary>
+        /// <param name="pyObject">The Python object to represent</param>
+        /// <returns>The string representation of the Python object</returns>
+        public static string ToDisplayString(this PyObject pyObject)
+        {
+            using (Py.GIL())
+            {
+                return $"'{pyObject}' of type '{pyObject.GetPythonType().Name}'";
+            }
+        }
+
+        /// <summary>
         /// Safely convert PyObject to ManagedObject using Py.GIL Lock
         /// If no type is given it will convert the PyObject's Python Type to a ManagedObject Type
         /// in a attempt to resolve the target type to convert to.
@@ -3177,7 +3223,7 @@ namespace QuantConnect
                 Exception exception = null;
                 if (!PyList.IsListType(pyObject))
                 {
-                    // it's not a pylist try to conver directly
+                    // it's not a pylist try to convert directly
                     Symbol result = null;
                     try
                     {
@@ -3305,7 +3351,7 @@ namespace QuantConnect
         [Obsolete("Deprecated as of 2025-07. Please use `str()`.")]
         public static string GetEnumString(this Enum value, PyObject pyObject)
         {
-            var type = GetType(pyObject);
+            GetType(pyObject);
             return value.ToString();
         }
 
@@ -3532,6 +3578,7 @@ namespace QuantConnect
         /// Helper method to determine symbol for a live subscription
         /// </summary>
         /// <remarks>Useful for continuous futures where we subscribe to the underlying</remarks>
+        [EditorBrowsable(EditorBrowsableState.Never)]
         public static bool TryGetLiveSubscriptionSymbol(this Symbol symbol, out Symbol mapped)
         {
             mapped = null;
@@ -3572,6 +3619,7 @@ namespace QuantConnect
         /// <summary>
         /// Helper method to determine if a given symbol is of custom data
         /// </summary>
+        [EditorBrowsable(EditorBrowsableState.Never)]
         public static bool IsCustomDataType<T>(this Symbol symbol)
         {
             return symbol.SecurityType == SecurityType.Base
@@ -3865,7 +3913,7 @@ namespace QuantConnect
                 var priceScaleFrontier = data.Time;
                 if (data.Time.Date != data.EndTime.Date && data.EndTime.TimeOfDay > TimeSpan.Zero)
                 {
-                    // if the data point goes from one day to another after midnight we use EndTime, this is due to differences between 'data' and 'exchage' time zone,
+                    // if the data point goes from one day to another after midnight we use EndTime, this is due to differences between 'data' and 'exchange' time zone,
                     // for example: NYMEX future CL 'data' TZ is UTC while 'exchange' TZ is NY, so daily bars go from 8PM 'X day' to 8PM 'X+1 day'. Note that the data
                     // in the daily bar itself is filtered by exchange open, so it has data from 09:30 'X+1 day' to 17:00 'X+1 day' as expected.
                     // A potential solution to avoid the need of this check is to adjust the daily data time zone to match the exchange time zone, following this example above
@@ -3921,9 +3969,7 @@ namespace QuantConnect
             switch (securityType)
             {
                 case SecurityType.Future:
-                    if ((universeSettings.DataMappingMode == DataMappingMode.OpenInterest
-                        || universeSettings.DataMappingMode == DataMappingMode.OpenInterestAnnual)
-                        && (market == Market.HKFE || market == Market.EUREX || market == Market.ICE))
+                    if (!universeSettings.DataMappingMode.IsAvailableForFutureMarket(market))
                     {
                         // circle around default OI for currently no OI available data
                         return DataMappingMode.LastTradingDay;
@@ -3932,6 +3978,15 @@ namespace QuantConnect
                 default:
                     return universeSettings.DataMappingMode;
             }
+        }
+
+        /// <summary>
+        /// Determines whether there is mapping data for the given data mapping mode in the given future market
+        /// </summary>
+        public static bool IsAvailableForFutureMarket(this DataMappingMode dataMappingMode, string market)
+        {
+            return dataMappingMode != DataMappingMode.OpenInterest && dataMappingMode != DataMappingMode.OpenInterestAnnual
+                || market != Market.HKFE && market != Market.EUREX && market != Market.ICE && market != Market.KRX;
         }
 
         /// <summary>
@@ -4015,6 +4070,7 @@ namespace QuantConnect
         /// <summary>
         /// Helper method to process an algorithms security changes, will add and remove securities according to them
         /// </summary>
+        [EditorBrowsable(EditorBrowsableState.Never)]
         public static void ProcessSecurityChanges(this IAlgorithm algorithm, SecurityChanges securityChanges)
         {
             foreach (var security in securityChanges.AddedSecurities)
@@ -4048,6 +4104,7 @@ namespace QuantConnect
         /// <summary>
         /// Helper method to set an algorithm runtime exception in a normalized fashion
         /// </summary>
+        [EditorBrowsable(EditorBrowsableState.Never)]
         public static void SetRuntimeError(this IAlgorithm algorithm, Exception exception, string context)
         {
             Log.Error(exception, $"Extensions.SetRuntimeError(): {Messages.Extensions.RuntimeError(algorithm, context)}");
@@ -4182,6 +4239,7 @@ namespace QuantConnect
         /// <param name="security">The found or added security instance</param>
         /// <param name="onError">Callback to invoke in case of unsupported security type</param>
         /// <returns>True if the security was found or added</returns>
+        [EditorBrowsable(EditorBrowsableState.Never)]
         public static bool GetOrAddUnrequestedSecurity(this IAlgorithm algorithm, Symbol symbol, out Security security,
             Action<IReadOnlyCollection<SecurityType>> onError = null)
         {
@@ -4227,11 +4285,57 @@ namespace QuantConnect
                 }
                 else
                 {
-                    // for items not directly requested set leverage to 1 and at the min resolution
-                    security = algorithm.AddSecurity(symbol.SecurityType, symbol.Value, resolution, symbol.ID.Market, fillForward, leverage, extendedHours);
+                    // add by symbol, not by ticker: the ticker can be outdated, such as a deserialized symbol's first ticker,
+                    // and resolving it today could land on a different security than the security identifier
+                    security = symbol.SecurityType == SecurityType.Equity
+                        ? AddUnrequestedEquity(algorithm, symbol, resolution, fillForward, leverage, extendedHours)
+                        : algorithm.AddSecurity(symbol, resolution, fillForward, leverage, extendedHours);
                 }
             }
             return true;
+        }
+
+        /// <summary>
+        /// Adds an equity by its security identifier, under the ticker it trades under today, without taking that ticker
+        /// in the <see cref="SymbolCache"/> from the security that owns it today
+        /// </summary>
+        private static Security AddUnrequestedEquity(IAlgorithm algorithm, Symbol symbol, Resolution resolution, bool fillForward,
+            decimal leverage, bool extendedHours)
+        {
+            // the exchange's date now: the algorithm time can be behind it, during warmup or in another time zone
+            var utcNow = algorithm.LiveMode ? DateTime.UtcNow : algorithm.UtcTime;
+            var exchangeTimeZone = MarketHoursDatabase.FromDataFolder().GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType).TimeZone;
+            var exchangeDate = utcNow.ConvertFromUtc(exchangeTimeZone).Date;
+
+            var mapFile = Composer.Instance.GetPart<IMapFileProvider>().Get(AuxiliaryDataKey.Create(symbol)).ResolveMapFile(symbol);
+            // once the map file has ended the ticker isn't known to be this security's today
+            var tickerIsCurrent = exchangeDate <= mapFile.DelistingDate;
+            var currentTicker = mapFile.GetMappedSymbol(exchangeDate, symbol.Value);
+            if (!string.IsNullOrEmpty(currentTicker) && currentTicker != symbol.Value)
+            {
+                symbol = symbol.UpdateMappedSymbol(currentTicker);
+            }
+
+            SymbolCache.TryGetSymbol(symbol.Value, out var previous);
+            if (previous != null && (previous.SecurityType != symbol.SecurityType || previous.ID.Market != symbol.ID.Market))
+            {
+                // like adding the ticker does, a cached symbol of another security type or market, such as custom data, doesn't keep it
+                previous = null;
+            }
+            var security = algorithm.AddSecurity(symbol, resolution, fillForward, leverage, extendedHours);
+
+            if (previous != null && previous.ID != symbol.ID)
+            {
+                // the ticker keeps resolving to the security it resolved to before
+                SymbolCache.TryRemove(symbol);
+                SymbolCache.Set(symbol.Value, previous);
+            }
+            else if (previous == null && !tickerIsCurrent)
+            {
+                // so that adding the ticker later resolves it to the security that trades under it today
+                SymbolCache.TryRemove(symbol);
+            }
+            return security;
         }
 
         /// <summary>
@@ -4306,6 +4410,7 @@ namespace QuantConnect
         /// dependency with the FF enumerators requiring that they receive aux data to properly handle delistings.
         /// Otherwise we would have issues with delisted symbols continuing to fill forward after expiry/delisting.
         /// Reference PR #5485 and related issues for more.</remarks>
+        [EditorBrowsable(EditorBrowsableState.Never)]
         public static bool ShouldEmitData(this SubscriptionDataConfig config, BaseData data, bool isUniverse = false)
         {
             // For now we are only filtering Auxiliary data; so if its another type just return true or if it's a margin interest rate which we want to emit always
@@ -4460,6 +4565,7 @@ namespace QuantConnect
         /// </summary>
         /// <param name="symbol">Type to check</param>
         /// <returns>True if it needs to be mapped</returns>
+        [EditorBrowsable(EditorBrowsableState.Never)]
         public static bool RequiresMapping(this Symbol symbol)
         {
             switch (symbol.SecurityType)

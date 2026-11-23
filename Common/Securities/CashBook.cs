@@ -101,7 +101,7 @@ namespace QuantConnect.Securities
         {
             var cash = new Cash(symbol, quantity, conversionRate);
             // let's return the cash instance we are using
-            return AddIternal(symbol, cash);
+            return AddInternal(symbol, cash);
         }
 
         /// <summary>
@@ -242,7 +242,7 @@ namespace QuantConnect.Securities
         /// <param name="value">Value.</param>
         public void Add(string symbol, Cash value)
         {
-            AddIternal(symbol, value);
+            AddInternal(symbol, value);
         }
 
         /// <summary>
@@ -279,18 +279,23 @@ namespace QuantConnect.Securities
         /// <param name="symbol">Key.</param>
         public override bool ContainsKey(string symbol)
         {
-            return _currencies.ContainsKey(symbol);
+            return !ReferenceEquals(symbol, null) && _currencies.ContainsKey(symbol);
         }
 
         /// <summary>
         /// Try to get the value.
         /// </summary>
         /// <remarks>To be added.</remarks>
-        /// <returns><c>true</c>, if get value was tryed, <c>false</c> otherwise.</returns>
+        /// <returns><c>true</c>, if get value was tried, <c>false</c> otherwise.</returns>
         /// <param name="symbol">The symbol.</param>
         /// <param name="value">Value.</param>
         public override bool TryGetValue(string symbol, out Cash value)
         {
+            if (ReferenceEquals(symbol, null))
+            {
+                value = null;
+                return false;
+            }
             return _currencies.TryGetValue(symbol, out value);
         }
 
@@ -404,7 +409,7 @@ namespace QuantConnect.Securities
 
         #endregion
 
-        private Cash AddIternal(string symbol, Cash value)
+        private Cash AddInternal(string symbol, Cash value)
         {
             if (symbol == Currencies.NullCurrency)
             {

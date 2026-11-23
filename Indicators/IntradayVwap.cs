@@ -61,7 +61,7 @@ namespace QuantConnect.Indicators
 
         /// <summary>
         /// Computes the next value of this indicator from the given state.
-        /// NOTE: This must be overriden since it's abstract in the base, but
+        /// NOTE: This must be overridden since it's abstract in the base, but
         /// will never be invoked since we've override the validate method above.
         /// </summary>
         /// <param name="input">The input given to the indicator</param>
@@ -69,6 +69,17 @@ namespace QuantConnect.Indicators
         protected override decimal ComputeNextValue(BaseData input)
         {
             throw new NotImplementedException($"{nameof(IntradayVwap)}.{nameof(ComputeNextValue)} should never be invoked.");
+        }
+
+        /// <summary>
+        /// Resets this indicator to its initial state
+        /// </summary>
+        public override void Reset()
+        {
+            _lastDate = default;
+            _sumOfVolume = 0m;
+            _sumOfPriceTimesVolume = 0m;
+            base.Reset();
         }
 
         /// <summary>

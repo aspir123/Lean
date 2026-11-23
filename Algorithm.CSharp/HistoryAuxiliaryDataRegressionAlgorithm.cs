@@ -122,7 +122,7 @@ namespace QuantConnect.Algorithm.CSharp
                 throw new RegressionTestException($"Unexpected delisting: {delistings[1]}");
             }
 
-            // get's remapped:
+            // gets remapped:
             // 2008-09-30 spwr -> spwra
             // 2011-11-17 spwra -> spwr
             var remappedSymbol = QuantConnect.Symbol.Create("SPWR", SecurityType.Equity, Market.USA);
@@ -194,7 +194,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Net Profit", "1.559%"},
             {"Sharpe Ratio", "13.436"},
             {"Sortino Ratio", "0"},
-            {"Probabilistic Sharpe Ratio", "95.977%"},
+            {"Probabilistic Sharpe Ratio", "95.868%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},

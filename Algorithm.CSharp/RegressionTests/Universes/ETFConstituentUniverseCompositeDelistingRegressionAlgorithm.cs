@@ -111,7 +111,7 @@ namespace QuantConnect.Algorithm.CSharp
             if (_universeSelectionDone)
             {
                 // manually added securities are added right away, the etf universe selection happens a few days later when data available
-                // AAPL was already added so it wont be counted
+                // AAPL was already added so it won't be counted
                 _universeAdded |= changes.AddedSecurities.Count == (expectedChangesCount - 1);
             }
 
@@ -178,7 +178,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Net Profit", "3.893%"},
             {"Sharpe Ratio", "1.291"},
             {"Sortino Ratio", "1.876"},
-            {"Probabilistic Sharpe Ratio", "53.929%"},
+            {"Probabilistic Sharpe Ratio", "53.581%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},

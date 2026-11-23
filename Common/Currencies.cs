@@ -72,6 +72,11 @@ namespace QuantConnect
         public const string JPY = "JPY";
 
         /// <summary>
+        /// KRW (South Korean won) currency string
+        /// </summary>
+        public const string KRW = "KRW";
+
+        /// <summary>
         /// Null currency used when a real one is not required
         /// </summary>
         public const string NullCurrency = "QCC";
@@ -87,6 +92,7 @@ namespace QuantConnect
             {USD, "$"},
             {GBP, "₤"},
             {JPY, "¥"},
+            {KRW, "₩"},
             {EUR, "€"},
             {"NZD", "$"},
             {"AUD", "$"},
@@ -305,7 +311,7 @@ namespace QuantConnect
         /// <summary>
         /// Checks whether or not certain symbol is a StableCoin without pair in a given market
         /// </summary>
-        /// <param name="symbol">The Symbol from wich we want to know if it's a StableCoin without pair</param>
+        /// <param name="symbol">The Symbol from which we want to know if it's a StableCoin without pair</param>
         /// <param name="market">The market in which we want to search for that StableCoin</param>
         /// <returns>True if the given symbol is a StableCoin without pair in the given market</returns>
         public static bool IsStableCoinWithoutPair(string symbol, string market)
@@ -355,7 +361,7 @@ namespace QuantConnect
         /// </summary>
         /// <param name="value">The value with currency</param>
         /// <param name="parsedValue">The decimal equivalent to the string value after conversion</param>
-        /// <returns>True if the value was succesfuly converted</returns>
+        /// <returns>True if the value was successfully converted</returns>
         public static bool TryParse(string value, out decimal parsedValue)
         {
             // Strip out the currency (any character before the first number) ignoring blank spaces since they are not supposed to be in numbers with currency

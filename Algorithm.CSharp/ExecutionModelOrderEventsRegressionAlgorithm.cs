@@ -117,7 +117,7 @@ namespace QuantConnect.Algorithm.CSharp
 
                 // This method will get events for all orders, but if we save the tickets in Execute we can filter
                 // to process events for orders placed by this model
-                if (_orderTickets.TryGetValue(orderEvent.OrderId, out var ticket))
+                if (_orderTickets.TryGetValue(orderEvent.OrderId, out _))
                 {
                     if (orderEvent.Status.IsFill())
                     {
@@ -176,7 +176,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Net Profit", "1.655%"},
             {"Sharpe Ratio", "8.472"},
             {"Sortino Ratio", "0"},
-            {"Probabilistic Sharpe Ratio", "66.840%"},
+            {"Probabilistic Sharpe Ratio", "66.693%"},
             {"Loss Rate", "100%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},

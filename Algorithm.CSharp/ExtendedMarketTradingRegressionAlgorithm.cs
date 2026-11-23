@@ -54,7 +54,7 @@ namespace QuantConnect.Algorithm.CSharp
             if (_lastAction.Date == Time.Date) return;
             TradeBar spyBar = slice["SPY"];
 
-            //If it isnt during market hours, go ahead and buy ten!
+            //If it isn't during market hours, go ahead and buy ten!
             if (!InMarketHours())
             {
                 LimitOrder(_spy, 10, spyBar.Low);
@@ -129,7 +129,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Net Profit", "0.136%"},
             {"Sharpe Ratio", "8.723"},
             {"Sortino Ratio", "41.728"},
-            {"Probabilistic Sharpe Ratio", "90.001%"},
+            {"Probabilistic Sharpe Ratio", "85.708%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},

@@ -147,7 +147,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Net Profit", "4.781%"},
             {"Sharpe Ratio", "8.272"},
             {"Sortino Ratio", "6.986"},
-            {"Probabilistic Sharpe Ratio", "87.028%"},
+            {"Probabilistic Sharpe Ratio", "85.885%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
@@ -207,8 +207,7 @@ namespace QuantConnect.Algorithm.CSharp
                 {
                     fill.Status = OrderStatus.PartiallyFilled;
                     _absoluteRemainingByOrderId[order.Id] = absoluteRemaining - Math.Abs(fill.FillQuantity);
-                    var price = fill.FillPrice;
-                    //_algorithm.Debug($"{_algorithm.Time} - Partial Fill - Remaining {_absoluteRemainingByOrderId[order.Id]} Price - {price}");
+                    //_algorithm.Debug($"{_algorithm.Time} - Partial Fill - Remaining {_absoluteRemainingByOrderId[order.Id]} Price - {fill.FillPrice}");
                 }
 
                 partialFills.Add(fill);

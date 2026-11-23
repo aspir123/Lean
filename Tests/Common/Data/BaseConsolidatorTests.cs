@@ -31,6 +31,11 @@ namespace QuantConnect.Tests.Common.Data
     {
         protected abstract IDataConsolidator CreateConsolidator();
 
+        /// <summary>
+        /// Whether the test values are expected to close at least one bar
+        /// </summary>
+        protected virtual bool EmitsConsolidatedBars => true;
+
         protected virtual void AssertConsolidator(IDataConsolidator consolidator)
         {
             Assert.IsNull(consolidator.Consolidated);
@@ -74,7 +79,6 @@ namespace QuantConnect.Tests.Common.Data
         {
             // Test Renko bar consistency amongst three consolidators starting at different times
 
-            var time = new DateTime(2016, 1, 1);
             var testValues = GetTestValues();
 
             var consolidatedBarsBefore = new List<IBaseData>();
@@ -102,7 +106,14 @@ namespace QuantConnect.Tests.Common.Data
             }
 
             Assert.AreEqual(consolidatedBarsBefore.Count, consolidatedBarsAfter.Count);
-            consolidatedBarsBefore.Zip<IBaseData, IBaseData, bool>(consolidatedBarsAfter, AssertConsolidatedValues);
+            if (EmitsConsolidatedBars)
+            {
+                CollectionAssert.IsNotEmpty(consolidatedBarsBefore);
+            }
+            foreach (var (before, after) in consolidatedBarsBefore.Zip(consolidatedBarsAfter))
+            {
+                AssertConsolidatedValues(before, after);
+            }
             consolidator.Dispose();
         }
     }

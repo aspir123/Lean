@@ -60,7 +60,7 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (!Portfolio.Invested)
             {
-                var marketTicket = MarketOrder("YESBANK", 1);
+                MarketOrder("YESBANK", 1);
             }
         }
 
@@ -113,7 +113,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Net Profit", "-0.008%"},
             {"Sharpe Ratio", "-497.389"},
             {"Sortino Ratio", "-73.22"},
-            {"Probabilistic Sharpe Ratio", "0.001%"},
+            {"Probabilistic Sharpe Ratio", "0.794%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},

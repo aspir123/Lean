@@ -50,6 +50,13 @@ namespace QuantConnect.Securities.IndexOption
         };
 
         /// <summary>
+        /// Known AM-settled index option tickers, which settle on the market open of their expiration date, or of the previous
+        /// trading day when it isn't one, whichever weekday it is. Their last trading date is the day before the expiration
+        /// </summary>
+        /// <remarks>VIX weeklies settle like the monthlies, on the Special Opening Quotation of their expiration morning</remarks>
+        internal static readonly HashSet<string> KnownAMSettledIndexOptionTickers = new() { "SPX", "NDX", "RUT", "VIX", "VIXW" };
+
+        /// <summary>
         /// Supported index option tickers
         /// </summary>
         public static readonly HashSet<string> SupportedIndexOptionTickers = new string[] { "SPX", "NDX", "VIX", "RUT" }
@@ -73,15 +80,24 @@ namespace QuantConnect.Securities.IndexOption
                 case "NQX":
                 case "SPXW":
                 case "RUTW":
-                // they have weeklies and monthly contracts
-                // NQX https://www.nasdaq.com/docs/NQXFactSheet.pdf
-                // SPXW https://www.cboe.com/tradable_products/sp_500/spx_weekly_options/specifications/
-                // RUTW expires every day
-                return FuturesExpiryUtilityFunctions.ThirdFriday(symbol.ID.Date) == symbol.ID.Date;
+                    // they have weeklies and monthly contracts
+                    // NQX https://www.nasdaq.com/docs/NQXFactSheet.pdf
+                    // SPXW https://www.cboe.com/tradable_products/sp_500/spx_weekly_options/specifications/
+                    // RUTW expires every day
+                    return FuturesExpiryUtilityFunctions.ThirdFriday(symbol.ID.Date) == symbol.ID.Date;
                 default:
                     // NDX/SPX/NQX/VIX/VIXW/NDXP/RUT are all normal contracts
                     return true;
             }
+        }
+
+        /// <summary>
+        /// Returns true if the index option is AM settled
+        /// </summary>
+        public static bool IsAMSettled(Symbol symbol)
+        {
+            var ticker = symbol.ID.Symbol.LazyToUpper();
+            return KnownAMSettledIndexOptionTickers.Contains(ticker) || !_nonStandardIndexOptionTickers.Contains(ticker);
         }
 
         /// <summary>
@@ -107,7 +123,7 @@ namespace QuantConnect.Securities.IndexOption
         /// <returns>Index ticker</returns>
         public static string MapToUnderlying(string indexOption)
         {
-            if(_nonStandardOptionToIndex.TryGetValue(indexOption.LazyToUpper(), out var index))
+            if (_nonStandardOptionToIndex.TryGetValue(indexOption.LazyToUpper(), out var index))
             {
                 return index;
             }
@@ -134,24 +150,14 @@ namespace QuantConnect.Securities.IndexOption
         }
 
         /// <summary>
-        /// Some index options last tradable date is the previous day to the expiration
+        /// AM-settled index options last tradable date is the previous day to the expiration
         /// https://www.cboe.com/tradable_products/vix/vix_options/specifications/
         /// https://www.cboe.com/tradable_products/ftse_russell/russell_2000_index_options/rut_specifications
         /// </summary>
         private static int GetExpirationOffset(string ticker)
         {
-            switch (ticker)
-            {
-                case "SPX":
-                case "NDX":
-                case "VIX":
-                case "VIXW":
-                case "RUT":
-                    return 1;
-                default:
-                    // SPXW, NQX, NDXP, RUTW
-                    return 0;
-            }
+            // SPXW, NQX, NDXP, RUTW trade until their expiration
+            return KnownAMSettledIndexOptionTickers.Contains(ticker) ? 1 : 0;
         }
     }
 }

@@ -147,7 +147,7 @@ namespace QuantConnect.Tests.Common.Data
             Assert.IsFalse(slice.HasData);
             Assert.IsTrue(slice.ToList().Count == 0);
             Assert.IsFalse(slice.ContainsKey(Symbols.SPY));
-            Assert.Throws<KeyNotFoundException>(() => { var data = slice[Symbols.SPY]; });
+            Assert.Throws<KeyNotFoundException>(() => { _ = slice[Symbols.SPY]; });
             Assert.AreEqual(0, slice.Count);
 
             var tickQuoteBar = new Tick { Symbol = Symbols.SPY, Time = DateTime.Now, TickType = TickType.Quote };
@@ -156,8 +156,38 @@ namespace QuantConnect.Tests.Common.Data
             Assert.IsFalse(slice.HasData);
             Assert.IsTrue(slice.ToList().Count == 0);
             Assert.IsFalse(slice.ContainsKey(Symbols.SPY));
-            Assert.Throws<KeyNotFoundException>(() => { var data = slice[Symbols.SPY]; });
+            Assert.Throws<KeyNotFoundException>(() => { _ = slice[Symbols.SPY]; });
             Assert.AreEqual(0, slice.Count);
+        }
+
+        [Test]
+        public void KeyNotFoundMessageNamesKeyAndSuggestsSafeAccess()
+        {
+            var tradeBar = new TradeBar { Symbol = Symbols.SPY, Time = DateTime.Now };
+            var slice = new Slice(DateTime.Now, new[] { tradeBar }, DateTime.Now);
+            try
+            {
+                Messages.SetAlgorithmLanguage(Language.CSharp);
+                var exception = Assert.Throws<KeyNotFoundException>(() => { _ = slice[Symbols.AAPL]; });
+                StringAssert.Contains("'AAPL", exception.Message);
+                StringAssert.Contains("Slice", exception.Message);
+                StringAssert.Contains("data.TryGetValue(symbol, out var value)", exception.Message);
+                StringAssert.Contains("data.ContainsKey(symbol)", exception.Message);
+
+                Messages.SetAlgorithmLanguage(Language.Python);
+                exception = Assert.Throws<KeyNotFoundException>(() => { _ = slice[Symbols.AAPL]; });
+                StringAssert.Contains("data.get(symbol)", exception.Message);
+                StringAssert.Contains("if symbol in data:", exception.Message);
+
+                // DataDictionary subtypes render their friendly generic type name through the same template
+                var dictionary = new DataDictionary<TradeBar>();
+                exception = Assert.Throws<KeyNotFoundException>(() => { _ = dictionary[Symbols.AAPL]; });
+                StringAssert.Contains("DataDictionary<TradeBar>", exception.Message);
+            }
+            finally
+            {
+                Messages.SetAlgorithmLanguage(Language.CSharp);
+            }
         }
 
         [Test]
@@ -360,7 +390,7 @@ namespace QuantConnect.Tests.Common.Data
 
         [TestCase(null)]
         [TestCase("")]
-        public void AccessingTicksParsedSaleConditinoDoesNotThrow(string saleCondition)
+        public void AccessingTicksParsedSaleConditionDoesNotThrow(string saleCondition)
         {
             var tick1 = new Tick(_dataTime, Symbols.SPY, 1.1m, 2.1m) { TickType = TickType.Trade };
             tick1.SaleCondition = saleCondition;
@@ -1271,7 +1301,6 @@ from AlgorithmImports import *
 def Test(slice, symbol, default_value):
     return slice.get(symbol, default_value)").GetAttr("Test");
 
-                var pythonSlice = GetSlice();
                 var expected = new QuoteBar { Symbol = Symbols.EURUSD, Time = DateTime.Now, Value = 9 };
                 PyObject result = null;
                 Assert.DoesNotThrow(() => result = test(GetSlice(), Symbols.EURUSD, expected));

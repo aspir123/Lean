@@ -57,8 +57,7 @@ namespace QuantConnect.Algorithm.CSharp
                 Debug("Purchased Stock");
             }
 
-            Symbol symbol;
-            if (SymbolCache.TryGetSymbol("AAPL", out symbol))
+            if (SymbolCache.TryGetSymbol("AAPL", out _))
             {
                 throw new RegressionTestException("Benchmark Symbol is not expected to be added to the Symbol cache");
             }
@@ -105,7 +104,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Net Profit", "1.694%"},
             {"Sharpe Ratio", "8.863"},
             {"Sortino Ratio", "0"},
-            {"Probabilistic Sharpe Ratio", "67.609%"},
+            {"Probabilistic Sharpe Ratio", "67.460%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},

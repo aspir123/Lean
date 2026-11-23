@@ -19,14 +19,13 @@ using System.Diagnostics;
 using QuantConnect.Logging;
 using System.Collections.Generic;
 using QuantConnect.Data.Consolidators;
-using System.Collections;
 
 namespace QuantConnect.Indicators
 {
     /// <summary>
     /// Abstract Indicator base, meant to contain non-generic fields of indicator base to support non-typed inputs
     /// </summary>
-    public abstract partial class IndicatorBase : IIndicator, IEnumerable<IndicatorDataPoint>
+    public abstract partial class IndicatorBase : WindowBase<IndicatorDataPoint>, IIndicator
     {
         /// <summary>
         /// The data consolidators associated with this indicator if any
@@ -36,32 +35,10 @@ namespace QuantConnect.Indicators
         public ISet<IDataConsolidator> Consolidators { get; } = new HashSet<IDataConsolidator>();
 
         /// <summary>
-        /// Gets the current state of this indicator. If the state has not been updated
-        /// then the time on the value will equal DateTime.MinValue.
-        /// </summary>
-        public IndicatorDataPoint Current
-        {
-            get
-            {
-                return Window[0];
-            }
-            protected set
-            {
-                Window.Add(value);
-            }
-        }
-
-        /// <summary>
         /// Gets the previous state of this indicator. If the state has not been updated
         /// then the time on the value will equal DateTime.MinValue.
         /// </summary>
-        public IndicatorDataPoint Previous
-        {
-            get
-            {
-                return Window.Count > 1 ? Window[1] : new IndicatorDataPoint(DateTime.MinValue, 0);
-            }
-        }
+        public override IndicatorDataPoint Previous => base.Previous ?? new IndicatorDataPoint(DateTime.MinValue, 0);
 
         /// <summary>
         /// Gets a name for this indicator
@@ -84,11 +61,6 @@ namespace QuantConnect.Indicators
         public event IndicatorUpdatedHandler Updated;
 
         /// <summary>
-        /// A rolling window keeping a history of the indicator values of a given period
-        /// </summary>
-        public RollingWindow<IndicatorDataPoint> Window { get; }
-
-        /// <summary>
         /// Resets this indicator to its initial state
         /// </summary>
         public abstract void Reset();
@@ -96,9 +68,8 @@ namespace QuantConnect.Indicators
         /// <summary>
         /// Initializes a new instance of the Indicator class.
         /// </summary>
-        protected IndicatorBase()
+        protected IndicatorBase() : base(DefaultWindowSize)
         {
-            Window = new RollingWindow<IndicatorDataPoint>(Indicator.DefaultWindowSize);
             Current = new IndicatorDataPoint(DateTime.MinValue, 0m);
         }
 
@@ -128,45 +99,6 @@ namespace QuantConnect.Indicators
         /// <param name="input">The value to use to update this indicator</param>
         /// <returns>True if this indicator is ready, false otherwise</returns>
         public abstract bool Update(IBaseData input);
-
-        /// <summary>
-        /// Indexes the history windows, where index 0 is the most recent indicator value.
-        /// If index is greater or equal than the current count, it returns null.
-        /// If the index is greater or equal than the window size, it returns null and resizes the windows to i + 1.
-        /// </summary>
-        /// <param name="i">The index</param>
-        /// <returns>the ith most recent indicator value</returns>
-        public IndicatorDataPoint this[int i]
-        {
-            get
-            {
-                return Window[i];
-            }
-        }
-
-        /// <summary>
-        /// Returns an enumerator that iterates through the history window.
-        /// </summary>
-        /// <returns>
-        /// A <see cref="T:System.Collections.Generic.IEnumerator`1" /> that can be used to iterate through the history window.
-        /// </returns>
-        /// <filterpriority>1</filterpriority>
-        public IEnumerator<IndicatorDataPoint> GetEnumerator()
-        {
-            return Window.GetEnumerator();
-        }
-
-        /// <summary>
-        /// Returns an enumerator that iterates through the history window.
-        /// </summary>
-        /// <returns>
-        /// An <see cref="T:System.Collections.IEnumerator" /> object that can be used to iterate through the history window.
-        /// </returns>
-        /// <filterpriority>2</filterpriority>
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return GetEnumerator();
-        }
 
         /// <summary>
         /// ToString Overload for Indicator Base
@@ -253,7 +185,7 @@ namespace QuantConnect.Indicators
         /// <returns>True if this indicator is ready, false otherwise</returns>
         public override bool Update(IBaseData input)
         {
-            T _previousSymbolInput = default(T);
+            T _previousSymbolInput;
             if (_previousInput.TryGetValue(input.Symbol.ID, out _previousSymbolInput) && input.EndTime < _previousSymbolInput.EndTime)
             {
                 if (!_loggedForwardOnlyIndicatorError)
@@ -361,9 +293,9 @@ namespace QuantConnect.Indicators
         /// <param name="obj">The object to compare with the current object. </param>
         public override bool Equals(object obj)
         {
-            // this implementation acts as a liason to prevent inconsistency between the operators
+            // this implementation acts as a liaison to prevent inconsistency between the operators
             // == and != against primitive types. the core impl for equals between two indicators
-            // is still reference equality, however, when comparing value types (floats/int, ect..)
+            // is still reference equality, however, when comparing value types (floats/int, etc..)
             // we'll use value type semantics on Current.Value
             // because of this, we shouldn't need to override GetHashCode as well since we're still
             // solely relying on reference semantics (think hashset/dictionary impls)

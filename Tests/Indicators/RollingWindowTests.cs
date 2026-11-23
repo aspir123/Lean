@@ -118,7 +118,7 @@ namespace QuantConnect.Tests.Indicators
             // add one and the window is ready, but MostRecentlyRemoved throws
 
             window.Add(0);
-            Assert.Throws<InvalidOperationException>(() => { var x = window.MostRecentlyRemoved; });
+            Assert.Throws<InvalidOperationException>(() => { _ = window.MostRecentlyRemoved; });
             Assert.AreEqual(1, window.Count);
             Assert.IsTrue(window.IsReady);
 
@@ -236,7 +236,7 @@ namespace QuantConnect.Tests.Indicators
             var window = new RollingWindow<int>(1);
             Assert.IsFalse(window.IsReady);
 
-            Assert.DoesNotThrow(() => { var x = window[-1]; });
+            Assert.DoesNotThrow(() => { _ = window[-1]; });
         }
 
         [Test]
@@ -473,8 +473,8 @@ namespace QuantConnect.Tests.Indicators
             Assert.AreEqual(30, window[-3]);
 
             // Invalid negative indices (exceeding window size)
-            Assert.Throws<ArgumentOutOfRangeException>(() => { var x = window[-4]; });
-            Assert.Throws<ArgumentOutOfRangeException>(() => { var x = window[-5]; });
+            Assert.Throws<ArgumentOutOfRangeException>(() => { _ = window[-4]; });
+            Assert.Throws<ArgumentOutOfRangeException>(() => { _ = window[-5]; });
         }
 
         [Test]
@@ -520,7 +520,7 @@ namespace QuantConnect.Tests.Indicators
             var testCases = new[] { -5, -10, int.MinValue };
             foreach (var index in testCases)
             {
-                Assert.Throws<ArgumentOutOfRangeException>(() => { var x = window[index]; });
+                Assert.Throws<ArgumentOutOfRangeException>(() => { _ = window[index]; });
             }
         }
 
@@ -601,6 +601,89 @@ def rolling_window_with_custom_data_type():
                 var value = test.As<decimal>();
                 Assert.AreEqual(expectedValue, value);
             }
+        }
+
+        [TestCase(2, 3, 5, new[] { 3, 2 })]
+        [TestCase(5, 7, 3, new[] { 7, 6, 5 })]
+        [TestCase(3, 6, 2, new[] { 6, 5 })]
+        [TestCase(3, 6, 5, new[] { 6, 5, 4 })]
+        public void ResizeFromOverwrittenWindowPreservesNewestElements(int initialSize, int totalAdds, int newSize, int[] expected)
+        {
+            var window = new RollingWindow<int>(initialSize);
+            for (var i = 1; i <= totalAdds; i++)
+            {
+                window.Add(i);
+            }
+
+            window.Size = newSize;
+
+            for (var i = 0; i < expected.Length; i++)
+            {
+                Assert.AreEqual(expected[i], window[i]);
+            }
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void AddAfterGrowingOverwrittenWindowKeepsNewestFirstOrder(bool growByIndexerRead)
+        {
+            var window = new RollingWindow<int>(3);
+            for (var i = 1; i <= 4; i++)
+            {
+                window.Add(i);
+            }
+            CollectionAssert.AreEqual(new[] { 4, 3, 2 }, window);
+
+            if (growByIndexerRead)
+            {
+                Assert.AreEqual(0, window[4]);
+            }
+            else
+            {
+                window.Size = 5;
+            }
+            Assert.AreEqual(5, window.Size);
+            CollectionAssert.AreEqual(new[] { 4, 3, 2 }, window);
+
+            window.Add(5);
+            CollectionAssert.AreEqual(new[] { 5, 4, 3, 2 }, window);
+            Assert.AreEqual(5, window[0]);
+            Assert.AreEqual(4, window[1]);
+
+            window.Add(6);
+            window.Add(7);
+            CollectionAssert.AreEqual(new[] { 7, 6, 5, 4, 3 }, window);
+            Assert.AreEqual(2, window.MostRecentlyRemoved);
+        }
+
+        [Test]
+        public void MultipleResizesOnOverwrittenWindowPreserveElementOrder()
+        {
+            var window = new RollingWindow<int>(5);
+            for (var i = 1; i <= 7; i++)
+            {
+                window.Add(i);
+            }
+
+            window.Size = 3;
+            Assert.AreEqual(7, window[0]);
+            Assert.AreEqual(6, window[1]);
+            Assert.AreEqual(5, window[2]);
+
+            window.Size = 10;
+            Assert.AreEqual(7, window[0]);
+            Assert.AreEqual(6, window[1]);
+            Assert.AreEqual(5, window[2]);
+
+            for (var i = 8; i <= 17; i++)
+            {
+                window.Add(i);
+            }
+
+            Assert.AreEqual(17, window[0]);
+            Assert.AreEqual(16, window[1]);
+            Assert.AreEqual(15, window[2]);
+            Assert.AreEqual(8, window[9]);
         }
     }
 }

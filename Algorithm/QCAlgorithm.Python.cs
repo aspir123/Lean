@@ -109,7 +109,7 @@ namespace QuantConnect.Algorithm
         [DocumentationAttribute(AddingData)]
         public Security AddData(PyObject type, string ticker, Resolution? resolution, DateTimeZone timeZone, bool fillForward = false, decimal leverage = 1.0m)
         {
-            return AddData(type.CreateType(), ticker, resolution, timeZone, fillForward, leverage);
+            return AddData(GetCustomDataType(type), ticker, resolution, timeZone, fillForward, leverage);
         }
 
         /// <summary>
@@ -135,7 +135,7 @@ namespace QuantConnect.Algorithm
         [DocumentationAttribute(AddingData)]
         public Security AddData(PyObject type, Symbol underlying, Resolution? resolution, DateTimeZone timeZone, bool fillForward = false, decimal leverage = 1.0m)
         {
-            return AddData(type.CreateType(), underlying, resolution, timeZone, fillForward, leverage);
+            return AddData(GetCustomDataType(type), underlying, resolution, timeZone, fillForward, leverage);
         }
 
         /// <summary>
@@ -219,7 +219,7 @@ namespace QuantConnect.Algorithm
         public Security AddData(PyObject type, string ticker, SymbolProperties properties, SecurityExchangeHours exchangeHours, Resolution? resolution = null, bool fillForward = false, decimal leverage = 1.0m)
         {
             // Get the right key for storage of base type symbols
-            var dataType = type.CreateType();
+            var dataType = GetCustomDataType(type);
             var key = SecurityIdentifier.GenerateBaseSymbol(dataType, ticker);
 
             // Add entries to our Symbol Properties DB and MarketHours DB
@@ -285,6 +285,21 @@ namespace QuantConnect.Algorithm
         }
 
         /// <summary>
+        /// Resolves the custom data <see cref="Type"/> from the PyObject argument of <see cref="AddData(PyObject, string, Resolution?)"/> and overloads,
+        /// throwing a clear exception if the caller passed something other than a custom data class (e.g. a string ticker).
+        /// </summary>
+        private static Type GetCustomDataType(PyObject type)
+        {
+            if (type.TryCreateType(out var dataType))
+            {
+                return dataType;
+            }
+
+            using var _ = Py.GIL();
+            throw new ArgumentException(Messages.QCAlgorithm.AddDataInvalidPyObjectType(type.Repr()));
+        }
+
+        /// <summary>
         /// Creates a new universe and adds it to the algorithm. This is for coarse fundamental US Equity data and
         /// will be executed on day changes in the NewYork time zone (<see cref="TimeZones.NewYork"/>)
         /// </summary>
@@ -295,7 +310,7 @@ namespace QuantConnect.Algorithm
             Func<IEnumerable<Fundamental>, object> fundamentalSelector;
             Universe universe;
 
-            if (pyObject.TryCreateType(out var type))
+            if (pyObject.TryCreateType(out _))
             {
                 return AddUniverse(pyObject, null, null);
             }
@@ -353,7 +368,7 @@ namespace QuantConnect.Algorithm
                 // pass
             }
 
-            if (pyObject.TryCreateType(out var type))
+            if (pyObject.TryCreateType(out _))
             {
                 return AddUniverse(pyObject, null, pyfine);
             }
@@ -622,7 +637,9 @@ namespace QuantConnect.Algorithm
 
             try
             {
-                dataConsolidator = new DataConsolidatorPythonWrapper(pyObject);
+                // reuse the wrapper of an earlier registration, a new one would never be disposed on removal
+                dataConsolidator = SubscriptionManager.FindPythonConsolidator(symbol, pyObject)
+                    ?? new DataConsolidatorPythonWrapper(pyObject);
             }
             catch
             {
@@ -1360,7 +1377,18 @@ namespace QuantConnect.Algorithm
                     SetBenchmark(pyBenchmark);
                     return;
                 }
-                SetBenchmark((Symbol)benchmark.AsManagedObject(typeof(Symbol)));
+
+                try
+                {
+                    SetBenchmark((Symbol)benchmark.AsManagedObject(typeof(Symbol)));
+                }
+                catch (InvalidCastException exception)
+                {
+                    throw new ArgumentException(
+                        $"Unable to set the benchmark from {benchmark.ToDisplayString()}: it is not a supported benchmark type. " +
+                        MethodSignatureFormatter.FormatOverloads(typeof(QCAlgorithm).GetMethods().Where(m => m.Name == nameof(SetBenchmark))),
+                        exception);
+                }
             }
         }
 
@@ -1891,7 +1919,7 @@ namespace QuantConnect.Algorithm
         public void AddCommand(PyObject type)
         {
             // create a test instance to validate interface is implemented accurate
-            var testInstance = new CommandPythonWrapper(type);
+            new CommandPythonWrapper(type);
 
             var wrappedType = Extensions.CreateType(type);
             _registeredCommands[wrappedType.Name] = (CallbackCommand command) =>

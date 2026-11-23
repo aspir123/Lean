@@ -55,12 +55,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         private SubscriptionCollection _subscriptions;
         private IFactorFileProvider _factorFileProvider;
         private IDataChannelProvider _channelProvider;
-        // in live trading we delay scheduled universe selection between 11 & 12 hours after midnight UTC so that we allow new selection data to be piped in
-        // NY goes from -4/-5 UTC time, so:
-        // 11 UTC - 4 => 7am NY
-        // 12 UTC - 4 => 8am NY
-        private readonly TimeSpan _scheduledUniverseUtcTimeShift = TimeSpan.FromMinutes(11 * 60 + DateTime.UtcNow.Second);
         private readonly HashSet<string> _unsupportedConfigurations = new();
+
+        // in live trading we delay scheduled universe selection to 8 am NY, but NY goes from -4/-5 UTC time, so we adjust it
+        private static ReferenceWrapper<DateTime> _lastUtcDateShiftUpdate;
+        private static ReferenceWrapper<TimeSpan> _scheduledUniverseUtcTimeShift;
 
         /// <summary>
         /// Public flag indicator that the thread is still busy.
@@ -205,7 +204,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             Subscription subscription = null;
 
             // let's keep track of the last point we got from the file based enumerator and start our history enumeration from this point
-            // this is much more efficient since these duplicated points will be dropped by the filter righ away causing memory usage spikes
+            // this is much more efficient since these duplicated points will be dropped by the filter right away causing memory usage spikes
             var lastPointTracker = new LastPointTracker();
 
             var localStartTime = request.StartTimeUtc.ConvertFromUtc(request.Security.Exchange.TimeZone);
@@ -239,9 +238,9 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 var auxEnumerators = new List<IEnumerator<BaseData>>();
 
                 if (LiveAuxiliaryDataEnumerator.TryCreate(request.Configuration, _timeProvider, request.Security.Cache, _mapFileProvider,
-                    _factorFileProvider, request.StartTimeLocal, out var auxDataEnumator))
+                    _factorFileProvider, request.StartTimeLocal, out var auxDataEnumerator))
                 {
-                    auxEnumerators.Add(auxDataEnumator);
+                    auxEnumerators.Add(auxDataEnumerator);
                 }
 
                 EventHandler handler = (_, _) => subscription?.OnNewDataAvailable();
@@ -324,11 +323,10 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
             // grab the relevant exchange hours
             var config = request.Universe.Configuration;
-            var localEndTime = request.EndTimeUtc.ConvertFromUtc(request.Security.Exchange.TimeZone);
             var tzOffsetProvider = new TimeZoneOffsetProvider(request.Configuration.ExchangeTimeZone, request.StartTimeUtc, request.EndTimeUtc);
 
             IEnumerator<BaseData> enumerator = null;
-            if (request.Universe is ITimeTriggeredUniverse timeTriggered)
+            if (request.Universe.TryGetUniverse(out ITimeTriggeredUniverse timeTriggered))
             {
                 Log.Trace($"LiveTradingDataFeed.CreateUniverseSubscription(): Creating user defined universe: {config.Symbol.ID}");
 
@@ -357,7 +355,9 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     _algorithm.ObjectStore,
                     // we adjust time to the previous tradable date
                     time => Time.GetStartTimeForTradeBars(request.Security.Exchange.Hours, time, Time.OneDay, 1, false, config.DataTimeZone, _algorithm.Settings.DailyPreciseEndTime),
-                    TimeSpan.FromMinutes(10)
+                    TimeSpan.FromMinutes(10),
+                    // when the expected universe file is not available yet, fall back to the backup universe file as a last resort
+                    fallBackToBackupUniverseFiles: true
                 );
                 var enumeratorStack = factory.CreateEnumerator(request, _dataProvider);
 
@@ -389,7 +389,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
             enumerator = AddScheduleWrapper(request, enumerator, new PredicateTimeProvider(_frontierTimeProvider, (currentUtcDateTime) => {
                 // will only let time advance after it's passed the live time shift frontier
-                return currentUtcDateTime.TimeOfDay > _scheduledUniverseUtcTimeShift;
+                return currentUtcDateTime.TimeOfDay > GetScheduledUniverseUtcTimeShift(currentUtcDateTime);
             }));
 
             enumerator = GetWarmupEnumerator(request, enumerator);
@@ -402,6 +402,20 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             return subscription;
         }
 
+        public static TimeSpan GetScheduledUniverseUtcTimeShift(DateTime currentUtcDateTime)
+        {
+            var currentDate = currentUtcDateTime.Date;
+            if (currentDate != _lastUtcDateShiftUpdate?.Value)
+            {
+                // on every date change, we will update the scheduled time shift to be 8am NY time, which is 12-13 UTC depending on DST
+                _lastUtcDateShiftUpdate = new(currentDate);
+                _scheduledUniverseUtcTimeShift = new(currentDate.ConvertFromUtc(TimeZones.NewYork).Date.AddHours(8).ConvertToUtc(TimeZones.NewYork).TimeOfDay
+                    // some minor randomness
+                    + TimeSpan.FromSeconds(DateTime.UtcNow.Second));
+            }
+            return _scheduledUniverseUtcTimeShift.Value;
+        }
+
         /// <summary>
         /// Build and apply the warmup enumerators when required
         /// </summary>
@@ -410,7 +424,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             if (_algorithm.IsWarmingUp)
             {
                 var warmupRequest = new SubscriptionRequest(request, endTimeUtc: _timeProvider.GetUtcNow(),
-                    // we will not fill forward each warmup enumerators separately but concatenated bellow
+                    // we will not fill forward each warmup enumerators separately but concatenated below
                     configuration: new SubscriptionDataConfig(request.Configuration, fillForward: false,
                     resolution: _algorithm.Settings.WarmupResolution));
                 if (warmupRequest.TradableDaysInDataTimeZone.Any()
@@ -442,6 +456,10 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
                     // don't let future data past. We let null pass because that's letting the next enumerator know we've ended because we always return true in live
                     synchronizedWarmupEnumerator = new FilterEnumerator<BaseData>(synchronizedWarmupEnumerator, data => data == null || data.EndTime <= warmupRequest.EndTimeLocal);
+
+                    // schedule the warmup enumeration on a worker: it performs blocking IO, history requests, disk and custom data sources,
+                    // this allows the subscriptions to warm up concurrently instead of sequentially driven by the synchronizer thread
+                    synchronizedWarmupEnumerator = SubscriptionUtils.ScheduleEnumerator(warmupRequest.Configuration.Symbol, synchronizedWarmupEnumerator);
 
                     // the order here is important, concat enumerator will keep the last enumerator given and dispose of the rest
                     liveEnumerator = new ConcatEnumerator(true, synchronizedWarmupEnumerator, liveEnumerator);
@@ -482,7 +500,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             IEnumerator<BaseData> result;
             if (warmup.IsUniverseSubscription)
             {
-                // we ignore the fill forward time span argument because we will fill forwared the concatenated file and history based enumerators next in the stack
+                // we ignore the fill forward time span argument because we will fill forward the concatenated file and history based enumerators next in the stack
                 result = CreateUniverseEnumerator(warmup);
             }
             else

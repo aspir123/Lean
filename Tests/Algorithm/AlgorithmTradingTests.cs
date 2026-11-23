@@ -1495,11 +1495,11 @@ namespace QuantConnect.Tests.Algorithm
             algo.Transactions.SetOrderProcessor(mock.Object);
 
             // Make the initial orders
-            var order1 = algo.MarketOrder(Symbols.MSFT, 1);
-            var order2 = algo.MarketOrder(Symbols.MSFT, 2);
-            var order3 = algo.MarketOrder(Symbols.AAPL, 3);
-            var order4 = algo.MarketOrder(Symbols.AAPL, 4);
-            var order5 = algo.LimitOrder(Symbols.AAPL, 5, 10);
+            algo.MarketOrder(Symbols.MSFT, 1);
+            algo.MarketOrder(Symbols.MSFT, 2);
+            algo.MarketOrder(Symbols.AAPL, 3);
+            algo.MarketOrder(Symbols.AAPL, 4);
+            algo.LimitOrder(Symbols.AAPL, 5, 10);
 
             // Setup the transaction handler to get the open orders as well as the order tickets
             mock.Setup(m => m.GetOpenOrders(It.IsAny<Func<Order, bool>>())).Returns<Func<Order, bool>>(filter => tickets.Values.Select(x => Order.CreateOrder(x.SubmitRequest)).Where(x => filter(x)).ToList());
@@ -1556,6 +1556,41 @@ namespace QuantConnect.Tests.Algorithm
             Assert.IsTrue(limitOrderCanceled);
         }
 
+        [TestCase(Language.CSharp, true)]
+        [TestCase(Language.CSharp, false)]
+        [TestCase(Language.Python, true)]
+        [TestCase(Language.Python, false)]
+        public void LiquidateIgnoresSymbolsNotAddedToTheAlgorithm(Language language, bool singleSymbol)
+        {
+            var algo = GetAlgorithm(out _, 1, 0);
+
+            // AAPL was never added to the algorithm
+            List<OrderTicket> liquidatedTickets = null;
+            if (language == Language.CSharp)
+            {
+                if (singleSymbol)
+                {
+                    Assert.DoesNotThrow(() => liquidatedTickets = algo.Liquidate(Symbols.AAPL));
+                }
+                else
+                {
+                    Assert.DoesNotThrow(() => liquidatedTickets = algo.Liquidate(new List<Symbol>() { Symbols.AAPL }));
+                }
+            }
+            else
+            {
+                using (Py.GIL())
+                {
+                    var symbols = singleSymbol
+                        ? Symbols.AAPL.ToPython()
+                        : (new List<Symbol>() { Symbols.AAPL }).ToPython();
+                    Assert.DoesNotThrow(() => liquidatedTickets = algo.Liquidate(symbols));
+                }
+            }
+
+            Assert.IsEmpty(liquidatedTickets);
+        }
+
         [Test]
         public void MarketOrdersAreSupportedForFuturesOnExtendedMarketHours()
         {
@@ -1602,7 +1637,7 @@ namespace QuantConnect.Tests.Algorithm
                 testOrders(new DateTime(2013, 10, i, 5, 0, 0));
             }
 
-            // October 6 to 10 (sunday to thrusday). Testing post-market hours
+            // October 6 to 10 (sunday to Thursday). Testing post-market hours
             for (var i = 6; i <= 10; i++)
             {
                 testOrders(new DateTime(2013, 10, i, 23, 0, 0));

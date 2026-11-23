@@ -41,6 +41,7 @@ using QuantConnect.Configuration;
 using NodaTime;
 using QuantConnect.Data.Market;
 using QuantConnect.Data;
+using QuantConnect.Data.Custom.IconicTypes;
 
 namespace QuantConnect.Tests.Engine.Setup
 {
@@ -49,7 +50,7 @@ namespace QuantConnect.Tests.Engine.Setup
     {
         private IAlgorithm _algorithm;
         private ITransactionHandler _transactionHandler;
-        private NonDequeingTestResultsHandler _resultHandler;
+        private NonDequeuingTestResultsHandler _resultHandler;
         private IBrokerage _brokerage;
         private DataManager _dataManager;
 
@@ -62,7 +63,7 @@ namespace QuantConnect.Tests.Engine.Setup
             _dataManager = new DataManagerStub(_algorithm);
             _algorithm.SubscriptionManager.SetDataManager(_dataManager);
             _transactionHandler = new BrokerageTransactionHandler();
-            _resultHandler = new NonDequeingTestResultsHandler();
+            _resultHandler = new NonDequeuingTestResultsHandler();
             _brokerage = new TestBrokerage();
 
             _brokerageSetupHandler = new TestableBrokerageSetupHandler();
@@ -94,8 +95,9 @@ namespace QuantConnect.Tests.Engine.Setup
                 Assert.AreEqual(OrderStatus.Submitted, order.Status);
             }
 
-            // Warn the user about each open order
-            Assert.AreEqual(_resultHandler.PersistentMessages.Count, 4);
+            // Warn the user about each open order, plus a single warning for the two zero quantity orders
+            Assert.AreEqual(_resultHandler.PersistentMessages.Count, 5);
+            Assert.AreEqual(1, _resultHandler.PersistentMessages.Count(x => ((DebugPacket)x).Message.Contains("zero quantity", StringComparison.InvariantCulture)));
 
             // Market order
             Assert.AreEqual(_transactionHandler.OrderTickets.First(x => x.Value.OrderType == OrderType.Market).Value.Quantity, 100);
@@ -147,7 +149,6 @@ namespace QuantConnect.Tests.Engine.Setup
             var resultHandler = new Mock<IResultHandler>();
             var transactionHandler = new Mock<ITransactionHandler>();
             var realTimeHandler = new Mock<IRealTimeHandler>();
-            var objectStore = new Mock<IObjectStore>();
             var brokerage = new Mock<IBrokerage>();
 
             brokerage.Setup(x => x.IsConnected).Returns(true);
@@ -192,7 +193,6 @@ namespace QuantConnect.Tests.Engine.Setup
             var resultHandler = new Mock<IResultHandler>();
             var transactionHandler = new Mock<ITransactionHandler>();
             var realTimeHandler = new Mock<IRealTimeHandler>();
-            var objectStore = new Mock<IObjectStore>();
             var brokerage = new Mock<IBrokerage>();
 
             brokerage.Setup(x => x.IsConnected).Returns(true);
@@ -281,7 +281,6 @@ namespace QuantConnect.Tests.Engine.Setup
             var transactionHandler = new Mock<ITransactionHandler>();
             var realTimeHandler = new Mock<IRealTimeHandler>();
             var brokerage = new Mock<IBrokerage>();
-            var objectStore = new Mock<IObjectStore>();
 
             brokerage.Setup(x => x.IsConnected).Returns(true);
             brokerage.Setup(x => x.AccountBaseCurrency).Returns(Currencies.USD);
@@ -318,7 +317,6 @@ namespace QuantConnect.Tests.Engine.Setup
             var transactionHandler = new Mock<ITransactionHandler>();
             var realTimeHandler = new Mock<IRealTimeHandler>();
             var brokerage = new Mock<IBrokerage>();
-            var objectStore = new Mock<IObjectStore>();
 
             brokerage.Setup(x => x.IsConnected).Returns(true);
             brokerage.Setup(x => x.GetCashBalance()).Returns(new List<CashAmount>());
@@ -349,7 +347,6 @@ namespace QuantConnect.Tests.Engine.Setup
             var transactionHandler = new Mock<ITransactionHandler>();
             var realTimeHandler = new Mock<IRealTimeHandler>();
             var brokerage = new Mock<IBrokerage>();
-            var objectStore = new Mock<IObjectStore>();
 
             brokerage.Setup(x => x.IsConnected).Returns(true);
             brokerage.Setup(x => x.AccountBaseCurrency).Returns(Currencies.USD);
@@ -372,6 +369,39 @@ namespace QuantConnect.Tests.Engine.Setup
         }
 
         [Test]
+        public void SetsAlgorithmTimeBeforeConnectingToBrokerage()
+        {
+            var algorithm = new TestAlgorithm();
+            algorithm.SetHistoryProvider(new BrokerageTransactionHandlerTests.BrokerageTransactionHandlerTests.EmptyHistoryProvider());
+            var job = GetJob();
+
+            var resultHandler = new Mock<IResultHandler>();
+            var transactionHandler = new Mock<ITransactionHandler>();
+            var realTimeHandler = new Mock<IRealTimeHandler>();
+            var brokerage = new Mock<IBrokerage>();
+
+            var timeAtConnect = DateTime.MinValue;
+            brokerage.Setup(x => x.Connect()).Callback(() => timeAtConnect = algorithm.UtcTime);
+            brokerage.Setup(x => x.IsConnected).Returns(true);
+            brokerage.Setup(x => x.AccountBaseCurrency).Returns(Currencies.USD);
+            brokerage.Setup(x => x.GetCashBalance()).Returns(new List<CashAmount>());
+            brokerage.Setup(x => x.GetAccountHoldings()).Returns(new List<Holding>());
+            brokerage.Setup(x => x.GetOpenOrders()).Returns(new List<Order>());
+
+            using var setupHandler = new BrokerageSetupHandler();
+            IBrokerageFactory factory;
+            setupHandler.CreateBrokerage(job, algorithm, out factory);
+            factory.Dispose();
+
+            var beforeSetup = DateTime.UtcNow;
+            Assert.IsTrue(setupHandler.Setup(new SetupHandlerParameters(_dataManager.UniverseSelection, algorithm, brokerage.Object, job, resultHandler.Object,
+                transactionHandler.Object, realTimeHandler.Object, TestGlobals.DataCacheProvider, TestGlobals.MapFileProvider)));
+
+            Assert.GreaterOrEqual(timeAtConnect, beforeSetup);
+            Assert.LessOrEqual(timeAtConnect, DateTime.UtcNow);
+        }
+
+        [Test]
         public void HoldingsPositionGroupResolved()
         {
             var algorithm = new TestAlgorithm();
@@ -384,7 +414,6 @@ namespace QuantConnect.Tests.Engine.Setup
             var transactionHandler = new Mock<ITransactionHandler>();
             var realTimeHandler = new Mock<IRealTimeHandler>();
             var brokerage = new Mock<IBrokerage>();
-            var objectStore = new Mock<IObjectStore>();
 
             brokerage.Setup(x => x.IsConnected).Returns(true);
             brokerage.Setup(x => x.AccountBaseCurrency).Returns(Currencies.USD);
@@ -431,7 +460,6 @@ namespace QuantConnect.Tests.Engine.Setup
             var transactionHandler = new Mock<ITransactionHandler>();
             var realTimeHandler = new Mock<IRealTimeHandler>();
             var brokerage = new Mock<IBrokerage>();
-            var objectStore = new Mock<IObjectStore>();
 
             brokerage.Setup(x => x.IsConnected).Returns(true);
             brokerage.Setup(x => x.AccountBaseCurrency).Returns(Currencies.USD);
@@ -457,6 +485,148 @@ namespace QuantConnect.Tests.Engine.Setup
         }
 
         [Test]
+        public void LoadsHoldingsForTheSecurityIdentifierWhenTheTickerIsOutdated()
+        {
+            // GOOGL's first ticker is GOOG, which today belongs to a different security
+            var googl = Symbol.Create("GOOGL", SecurityType.Equity, Market.USA);
+            var holdingSymbol = new Symbol(googl.ID, googl.ID.Symbol);
+            var currentGoog = Symbol.Create(holdingSymbol.Value, SecurityType.Equity, Market.USA);
+            Assert.AreEqual("GOOG", holdingSymbol.Value);
+            Assert.AreNotEqual(googl.ID, currentGoog.ID);
+
+            var algorithm = new TestAlgorithm();
+            algorithm.SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage);
+
+            algorithm.SetHistoryProvider(new BrokerageTransactionHandlerTests.BrokerageTransactionHandlerTests.EmptyHistoryProvider());
+            var job = GetJob();
+
+            var resultHandler = new Mock<IResultHandler>();
+            var transactionHandler = new Mock<ITransactionHandler>();
+            var realTimeHandler = new Mock<IRealTimeHandler>();
+            var brokerage = new Mock<IBrokerage>();
+
+            brokerage.Setup(x => x.IsConnected).Returns(true);
+            brokerage.Setup(x => x.AccountBaseCurrency).Returns(Currencies.USD);
+            brokerage.Setup(x => x.GetCashBalance()).Returns(new List<CashAmount>());
+            brokerage.Setup(x => x.GetAccountHoldings()).Returns(new List<Holding>
+            {
+                new Holding { Symbol = holdingSymbol, Quantity = 100, AveragePrice = 10 }
+            });
+            brokerage.Setup(x => x.GetOpenOrders()).Returns(new List<Order>());
+
+            using var setupHandler = new BrokerageSetupHandler();
+
+            IBrokerageFactory factory;
+            setupHandler.CreateBrokerage(job, algorithm, out factory);
+            factory.Dispose();
+
+            Assert.IsTrue(setupHandler.Setup(new SetupHandlerParameters(_dataManager.UniverseSelection, algorithm, brokerage.Object, job, resultHandler.Object,
+                transactionHandler.Object, realTimeHandler.Object, TestGlobals.DataCacheProvider, TestGlobals.MapFileProvider)));
+
+            Assert.IsTrue(algorithm.Portfolio.Securities.TryGetValue(googl, out var security));
+            Assert.AreEqual(googl.ID, security.Symbol.ID);
+            Assert.AreEqual(100, security.Holdings.Quantity);
+            Assert.IsFalse(algorithm.Portfolio.Securities.ContainsKey(currentGoog));
+
+            // the restored security uses today's ticker, and the old ticker still resolves to today's security
+            Assert.AreEqual("GOOGL", security.Symbol.Value);
+            Assert.AreEqual(googl.ID, SymbolCache.GetSymbol("GOOGL").ID);
+            Assert.AreEqual(currentGoog.ID, algorithm.AddEquity("GOOG").Symbol.ID);
+        }
+
+        [Test]
+        public void RestoredEquityUsesTheCurrentTickerWhenTheAlgorithmTimeIsHistorical()
+        {
+            // a live algorithm warming up: its time is before GOOGL's ticker change
+            var algorithm = GetAlgorithm(liveMode: true, utcTime: new DateTime(2013, 1, 2, 15, 0, 0));
+            var googl = Symbol.Create("GOOGL", SecurityType.Equity, Market.USA);
+            var currentGoog = algorithm.AddEquity("GOOG").Symbol;
+            Assert.AreNotEqual(googl.ID, currentGoog.ID);
+
+            Assert.IsTrue(algorithm.GetOrAddUnrequestedSecurity(new Symbol(googl.ID, "GOOG"), out var security));
+
+            Assert.AreEqual(googl.ID, security.Symbol.ID);
+            Assert.AreEqual("GOOGL", security.Symbol.Value);
+            Assert.AreEqual(currentGoog.ID, algorithm.AddEquity("GOOG").Symbol.ID);
+        }
+
+        [Test]
+        public void RestoredEquityUsesTheExchangeDateWhenTheAlgorithmTimeZoneIsBehind()
+        {
+            // April 3 in New York, when GOOCV became GOOG, but still April 2 in Los Angeles
+            var algorithm = GetAlgorithm(liveMode: false, utcTime: new DateTime(2014, 4, 3, 5, 0, 0), timeZone: "America/Los_Angeles");
+            var goog = Symbol.Create("GOOG", SecurityType.Equity, Market.USA);
+
+            Assert.IsTrue(algorithm.GetOrAddUnrequestedSecurity(new Symbol(goog.ID, "GOOG"), out var security));
+
+            Assert.AreEqual(goog.ID, security.Symbol.ID);
+            Assert.AreEqual("GOOG", security.Symbol.Value);
+            Assert.AreEqual(goog.ID, SymbolCache.GetSymbol("GOOG").ID);
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void RestoredEquityWithAnEndedMapFileKeepsItsTickerOffTheCurrentOwner(bool tickerRequestedBefore)
+        {
+            var algorithm = GetAlgorithm(liveMode: true, utcTime: DateTime.UtcNow);
+            var currentFb = Symbol.Create("FB", SecurityType.Equity, Market.USA);
+            if (tickerRequestedBefore)
+            {
+                Assert.AreEqual(currentFb.ID, algorithm.AddEquity("FB").Symbol.ID);
+            }
+            // this FB's map file ends in 2003
+            var oldFb = new Symbol(SecurityIdentifier.GenerateEquity(new DateTime(1999, 9, 29), "FB", Market.USA), "FB");
+            Assert.AreNotEqual(currentFb.ID, oldFb.ID);
+
+            Assert.IsTrue(algorithm.GetOrAddUnrequestedSecurity(oldFb, out var security));
+
+            Assert.AreEqual(oldFb.ID, security.Symbol.ID);
+            Assert.AreEqual(currentFb.ID, algorithm.AddEquity("FB").Symbol.ID);
+        }
+
+        [Test]
+        public void RestoredEquityResolvesByItsTicker()
+        {
+            var algorithm = GetAlgorithm(liveMode: true, utcTime: DateTime.UtcNow);
+            var aapl = Symbol.Create("AAPL", SecurityType.Equity, Market.USA);
+
+            Assert.IsTrue(algorithm.GetOrAddUnrequestedSecurity(new Symbol(aapl.ID, "AAPL"), out var security));
+            security.Holdings.SetHoldings(10, 100);
+
+            Assert.AreEqual(aapl, SymbolCache.GetSymbol("AAPL"));
+            Assert.AreEqual(100, algorithm.Portfolio["AAPL"].Quantity);
+            Assert.AreEqual(aapl, algorithm.AddEquity("AAPL").Symbol);
+        }
+
+        [Test]
+        public void RestoredEquityResolvesByItsTickerWhenTheTickerHasCustomData()
+        {
+            var algorithm = GetAlgorithm(liveMode: true, utcTime: DateTime.UtcNow);
+            algorithm.AddData<UnlinkedData>("AAPL");
+            var aapl = Symbol.Create("AAPL", SecurityType.Equity, Market.USA);
+
+            Assert.IsTrue(algorithm.GetOrAddUnrequestedSecurity(new Symbol(aapl.ID, "AAPL"), out var security));
+            security.Holdings.SetHoldings(10, 100);
+
+            Assert.AreEqual(aapl, SymbolCache.GetSymbol("AAPL"));
+            Assert.AreEqual(100, algorithm.Portfolio["AAPL"].Quantity);
+        }
+
+        private static QCAlgorithm GetAlgorithm(bool liveMode, DateTime utcTime, string timeZone = null)
+        {
+            SymbolCache.Clear();
+            var algorithm = new QCAlgorithm();
+            algorithm.SubscriptionManager.SetDataManager(new DataManagerStub(algorithm));
+            algorithm.SetLiveMode(liveMode);
+            if (timeZone != null)
+            {
+                algorithm.SetTimeZone(timeZone);
+            }
+            algorithm.SetDateTime(utcTime);
+            return algorithm;
+        }
+
+        [Test]
         public void SeedsSecurityCorrectly()
         {
             var symbol = Symbol.Create("AUDUSD", SecurityType.Forex, Market.Oanda);
@@ -471,7 +641,6 @@ namespace QuantConnect.Tests.Engine.Setup
             var transactionHandler = new Mock<ITransactionHandler>();
             var realTimeHandler = new Mock<IRealTimeHandler>();
             var brokerage = new Mock<IBrokerage>();
-            var objectStore = new Mock<IObjectStore>();
 
             brokerage.Setup(x => x.IsConnected).Returns(true);
             brokerage.Setup(x => x.AccountBaseCurrency).Returns(Currencies.USD);
@@ -520,7 +689,6 @@ namespace QuantConnect.Tests.Engine.Setup
             var transactionHandler = new Mock<ITransactionHandler>();
             var realTimeHandler = new Mock<IRealTimeHandler>();
             var brokerage = new Mock<IBrokerage>();
-            var objectStore = new Mock<IObjectStore>();
 
             brokerage.Setup(x => x.IsConnected).Returns(true);
             brokerage.Setup(x => x.AccountBaseCurrency).Returns(Currencies.USD);
@@ -556,7 +724,6 @@ namespace QuantConnect.Tests.Engine.Setup
             var transactionHandler = new Mock<ITransactionHandler>();
             var realTimeHandler = new Mock<IRealTimeHandler>();
             var brokerage = new Mock<IBrokerage>();
-            var objectStore = new Mock<IObjectStore>();
 
             brokerage.Setup(x => x.IsConnected).Returns(true);
             brokerage.Setup(x => x.AccountBaseCurrency).Returns(Currencies.USD);
@@ -651,7 +818,6 @@ namespace QuantConnect.Tests.Engine.Setup
             var resultHandler = new Mock<IResultHandler>();
             var transactionHandler = new Mock<ITransactionHandler>();
             var realTimeHandler = new Mock<IRealTimeHandler>();
-            var objectStore = new Mock<IObjectStore>();
             var brokerage = new Mock<IBrokerage>();
 
             brokerage.Setup(x => x.IsConnected).Returns(true);
@@ -870,7 +1036,7 @@ namespace QuantConnect.Tests.Engine.Setup
             return job;
         }
 
-        private class NonDequeingTestResultsHandler : TestResultHandler
+        private class NonDequeuingTestResultsHandler : TestResultHandler
         {
             private readonly AlgorithmNodePacket _job = new BacktestNodePacket();
             public readonly ConcurrentQueue<Packet> PersistentMessages = new ConcurrentQueue<Packet>();
@@ -965,7 +1131,10 @@ namespace QuantConnect.Tests.Engine.Setup
                 marketOrderWithPrice,
                 new LimitOrder(Symbols.SPY, -quantity, pricePlusDelta, time),
                 new StopMarketOrder(Symbols.SPY, quantity, pricePlusDelta, time),
-                new StopLimitOrder(Symbols.SPY, quantity, pricePlusDelta, priceMinusDelta, time)
+                new StopLimitOrder(Symbols.SPY, quantity, pricePlusDelta, priceMinusDelta, time),
+                // orders with zero quantity should be ignored, with a single user warning
+                new LimitOrder(Symbols.SPY, 0, pricePlusDelta, time) { BrokerId = new List<string> { "zero-qty-1" } },
+                new MarketOrder(Symbols.SPY, 0, time) { BrokerId = new List<string> { "zero-qty-2" } }
             };
         }
 

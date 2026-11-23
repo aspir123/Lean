@@ -34,7 +34,7 @@ namespace QuantConnect.Algorithm.CSharp
             SetEndDate(2013, 10, 11);
 
             // even though we're using a framework algorithm, we can still add our securities
-            // using the AddEquity/Forex/Crypto/ect methods and then pass them into a manual
+            // using the AddEquity/Forex/Crypto/etc methods and then pass them into a manual
             // universe selection model using Securities.Keys
             AddEquity("SPY");
             AddEquity("IBM");
@@ -97,7 +97,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Net Profit", "-0.564%"},
             {"Sharpe Ratio", "-2.767"},
             {"Sortino Ratio", "-3.388"},
-            {"Probabilistic Sharpe Ratio", "32.568%"},
+            {"Probabilistic Sharpe Ratio", "32.075%"},
             {"Loss Rate", "70%"},
             {"Win Rate", "30%"},
             {"Profit-Loss Ratio", "0.03"},

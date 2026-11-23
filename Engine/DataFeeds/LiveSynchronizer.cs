@@ -60,7 +60,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             _frontierTimeProvider = new LiveTimeProvider(realTime: TimeProvider);
             // the synchronizer will use our '_frontierTimeProvider' which initially during warmup will be using
             // the base time provider which is the subscription based time provider (like backtesting)
-            // once wawrmup finishes it will start using the realtime provider
+            // once warmup finishes it will start using the realtime provider
             SubscriptionSynchronizer.SetTimeProvider(_frontierTimeProvider);
 
             // attach event handlers to subscriptions
@@ -139,6 +139,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 // check for cancellation
                 if (timeSlice == null || cancellationToken.IsCancellationRequested) break;
 
+                if (ShouldEmitWarmupEndPulse(timeSlice))
+                {
+                    yield return TimeSliceFactory.CreateTimePulse(WarmupEndUtc);
+                }
+
                 var frontierUtc = FrontierTimeProvider.GetUtcNow();
                 // emit on data or if we've elapsed a full second since last emit or there are security changes
                 if (timeSlice.SecurityChanges != SecurityChanges.None
@@ -207,6 +212,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         {
             base.PostInitialize();
             _frontierTimeProvider.Initialize(base.GetTimeProvider());
+            WarmupEndUtc = TimeProvider.GetUtcNow();
         }
 
         /// <summary>

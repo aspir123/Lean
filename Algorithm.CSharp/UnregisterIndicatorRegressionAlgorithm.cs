@@ -56,7 +56,7 @@ namespace QuantConnect.Algorithm.CSharp
                 _trin.Reset();
                 UnregisterIndicator(_trin);
 
-                // let's create a new one with a differente resolution
+                // let's create a new one with a different resolution
                 _trin2 = TRIN(_symbols, Resolution.Hour);
             }
 
@@ -116,7 +116,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Net Profit", "1.549%"},
             {"Sharpe Ratio", "10.888"},
             {"Sortino Ratio", "0"},
-            {"Probabilistic Sharpe Ratio", "66.376%"},
+            {"Probabilistic Sharpe Ratio", "66.276%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},

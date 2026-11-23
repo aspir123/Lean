@@ -20,7 +20,7 @@ using QuantConnect.Securities.Option;
 namespace QuantConnect.Algorithm.CSharp
 {
     /// <summary>
-    /// Regression algorithm assering we can disable automatic option assignment
+    /// Regression algorithm asserting we can disable automatic option assignment
     /// </summary>
     public class NullOptionAssignmentRegressionAlgorithm : OptionAssignmentRegressionAlgorithm
     {
@@ -56,7 +56,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Net Profit", "-0.462%"},
             {"Sharpe Ratio", "-6.902"},
             {"Sortino Ratio", "0"},
-            {"Probabilistic Sharpe Ratio", "95.713%"},
+            {"Probabilistic Sharpe Ratio", "24.882%"},
             {"Loss Rate", "67%"},
             {"Win Rate", "33%"},
             {"Profit-Loss Ratio", "0.57"},

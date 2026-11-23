@@ -495,7 +495,7 @@ namespace QuantConnect.Tests.Research
         }
 
         [Test]
-        public void CanoicalFutureCrashesGetOptionHistory()
+        public void CanonicalFutureCrashesGetOptionHistory()
         {
             var qb = new QuantBook();
             var future = Symbol.Create(Futures.Indices.SP500EMini, SecurityType.Future, Market.CME);
@@ -528,8 +528,8 @@ namespace QuantConnect.Tests.Research
 
         [TestCase(true, true, 8640)]
         [TestCase(true, false, 2700)]
-        [TestCase(false, true, 6899)]
-        [TestCase(false, false, 2249)]
+        [TestCase(false, true, 8279)]
+        [TestCase(false, false, 2699)]
         public void FutureHistorySpecifyingFillForwardAndExtendedMarket(bool fillForward, bool extendedMarket, int expectedCount)
         {
             using (Py.GIL())
@@ -694,7 +694,7 @@ def getHistory():
         }
 
         [Test]
-        public void HistoryDataDoesWorksCorrecltyWithoutAddingTheCustomDataInPython()
+        public void HistoryDataDoesWorksCorrectlyWithoutAddingTheCustomDataInPython()
         {
             using (Py.GIL())
             {
@@ -779,7 +779,7 @@ class TestTradeBar(TradeBar):
         }
 
         [Test]
-        public void HistoryDataWorksCorrecltyWithoutAddingTheCustomDataInCSharp()
+        public void HistoryDataWorksCorrectlyWithoutAddingTheCustomDataInCSharp()
         {
             var qb = new QuantBook();
             var symbol = qb.AddEquity("AAPL", Resolution.Daily).Symbol;

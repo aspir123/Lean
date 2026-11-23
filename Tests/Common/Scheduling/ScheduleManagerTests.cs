@@ -82,7 +82,7 @@ namespace QuantConnect.Tests.Common.Scheduling
             var spy = algorithm.AddEquity("SPY").Symbol;
 
             var eventTriggerTimes = new List<DateTime>();
-            var scheduledEvent = algorithm.Schedule.On(algorithm.Schedule.DateRules.WeekStart(spy),
+            algorithm.Schedule.On(algorithm.Schedule.DateRules.WeekStart(spy),
                 algorithm.Schedule.TimeRules.BeforeMarketClose(spy, 3),
                 () =>
                 {
@@ -117,7 +117,7 @@ namespace QuantConnect.Tests.Common.Scheduling
             var time = new DateTime(2024, 02, 10);
             SetUp(time, out var algorithm, out var handler, out var spy);
             var eventTriggerTimes = new List<DateTime>();
-            var scheduledEvent = algorithm.Schedule.On(algorithm.Schedule.DateRules.WeekStart(spy),
+            algorithm.Schedule.On(algorithm.Schedule.DateRules.WeekStart(spy),
                 algorithm.Schedule.TimeRules.BeforeMarketClose(spy, 60),
                 () =>
                 {
@@ -145,7 +145,12 @@ namespace QuantConnect.Tests.Common.Scheduling
             // Start
             handler.SetTime(time);
 
-            finished.Wait(TimeSpan.FromSeconds(15));
+            // The time advance is driven by the live real-time handler firing the scheduled events above, so the
+            // fast-forward from February to April is bounded by wall-clock. Give it a generous budget and assert it
+            // actually reached the end, instead of asserting on a partially advanced timeline (which under load
+            // dropped the final week's scheduled event and produced a misleading count mismatch).
+            Assert.IsTrue(finished.Wait(TimeSpan.FromSeconds(120)),
+                "Timed out waiting for the scheduled time advance to reach April");
 
             handler.Exit();
 
@@ -167,8 +172,7 @@ namespace QuantConnect.Tests.Common.Scheduling
         public void DatesReturnedAreNormalized()
         {
             var time = new DateTime(2024, 02, 10);
-            SetUp(time, out var algorithm, out var handler, out var spy);
-            var eventTriggerTimes = new List<DateTime>();
+            SetUp(time, out var algorithm, out var handler, out _);
             using var finished = new ManualResetEventSlim(false);
 
             // Schedule a task to advance time
@@ -187,7 +191,6 @@ namespace QuantConnect.Tests.Common.Scheduling
                 () =>
                 {
                     handler.ManualTimeProvider.Advance(timeStep);
-                    var now = handler.ManualTimeProvider.GetUtcNow();
                     finished.Set();
                 });
 
@@ -222,6 +225,14 @@ namespace QuantConnect.Tests.Common.Scheduling
             public ManualTimeProvider ManualTimeProvider = new ManualTimeProvider();
 
             protected override ITimeProvider TimeProvider => ManualTimeProvider;
+
+            // Time is fully driven by the ManualTimeProvider in tests, so there's no need to pace the
+            // scan loop to real wall-clock time. Sleeping here (Thread.Sleep granularity is ~15ms on
+            // Windows) would make the loop take longer than the test's timeout for long simulated ranges,
+            // causing the last scheduled events to be missed intermittently.
+            protected override void WaitTillNextSecond(DateTime time)
+            {
+            }
         }
     }
 }

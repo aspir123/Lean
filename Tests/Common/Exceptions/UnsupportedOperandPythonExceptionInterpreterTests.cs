@@ -26,6 +26,8 @@ namespace QuantConnect.Tests.Common.Exceptions
     public class UnsupportedOperandPythonExceptionInterpreterTests
     {
         private PythonException _pythonException;
+        private PythonException _datetimeDateException;
+        private PythonException _dateDatetimeException;
 
         [OneTimeSetUp]
         public void Setup()
@@ -43,6 +45,26 @@ namespace QuantConnect.Tests.Common.Exceptions
                 catch (PythonException pythonException)
                 {
                     _pythonException = pythonException;
+                }
+
+                try
+                {
+                    // x = datetime(2020, 1, 2) - date(2020, 1, 1)
+                    algorithm.unsupported_operand_datetime_date();
+                }
+                catch (PythonException pythonException)
+                {
+                    _datetimeDateException = pythonException;
+                }
+
+                try
+                {
+                    // x = date(2020, 1, 1) - datetime(2020, 1, 2)
+                    algorithm.unsupported_operand_date_datetime();
+                }
+                catch (PythonException pythonException)
+                {
+                    _dateDatetimeException = pythonException;
                 }
             }
         }
@@ -74,10 +96,27 @@ namespace QuantConnect.Tests.Common.Exceptions
         }
 
         [Test]
+        [TestCase(true)]
+        [TestCase(false)]
+        public void AppendsDateHintForDatetimeDateOperands(bool datetimeFirst)
+        {
+            var exception = datetimeFirst ? _datetimeDateException : _dateDatetimeException;
+            var interpreted = new UnsupportedOperandPythonExceptionInterpreter().Interpret(exception, NullExceptionInterpreter.Instance);
+            Assert.IsTrue(interpreted.Message.Contains("'datetime.datetime'"), interpreted.Message);
+            Assert.IsTrue(interpreted.Message.Contains(".date()"), interpreted.Message);
+        }
+
+        [Test]
+        public void DoesNotAppendDateHintForOtherOperands()
+        {
+            var interpreted = new UnsupportedOperandPythonExceptionInterpreter().Interpret(_pythonException, NullExceptionInterpreter.Instance);
+            Assert.IsFalse(interpreted.Message.Contains(".date()"), interpreted.Message);
+        }
+
+        [Test]
         public void VerifyMessageContainsStackTraceInformation()
         {
             var exception = CreateExceptionFromType(typeof(PythonException));
-            var assembly = typeof(PythonExceptionInterpreter).Assembly;
             var interpreter = StackExceptionInterpreter.CreateFromAssemblies();
             exception = interpreter.Interpret(exception, NullExceptionInterpreter.Instance);
             Assert.True(exception.Message.Contains("x = None + \"Pepe Grillo\""));

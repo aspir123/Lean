@@ -116,7 +116,7 @@ namespace QuantConnect.Algorithm.CSharp
                 }
             }
 
-            // Passing through the unvierse type and symbol
+            // Passing through the universe type and symbol
             var enumerableOfDataDictionary = History<FundamentalUniverse>(new[] { _universe.Symbol }, 100);
             foreach (var selectionCollectionForADay in enumerableOfDataDictionary)
             {
@@ -250,7 +250,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Net Profit", "-0.042%"},
             {"Sharpe Ratio", "-3.451"},
             {"Sortino Ratio", "-4.933"},
-            {"Probabilistic Sharpe Ratio", "27.530%"},
+            {"Probabilistic Sharpe Ratio", "17.672%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},

@@ -48,7 +48,6 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators.Factories
             );
 
             var universeSettings = new UniverseSettings(Resolution.Daily, 2m, true, false, TimeSpan.FromDays(1));
-            var securityInitializer = new BrokerageModelSecurityInitializer(new DefaultBrokerageModel(), SecuritySeeder.Null);
             using var universe = new CoarseFundamentalUniverse(universeSettings, x => new List<Symbol>{ Symbols.AAPL });
 
             var factory = new BaseDataCollectionSubscriptionEnumeratorFactory(null);
@@ -93,7 +92,6 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators.Factories
             );
 
             var universeSettings = new UniverseSettings(Resolution.Daily, 2m, true, false, TimeSpan.FromDays(1));
-            var securityInitializer = new BrokerageModelSecurityInitializer(new DefaultBrokerageModel(), SecuritySeeder.Null);
             using var universe = new CoarseFundamentalUniverse(universeSettings, x => new List<Symbol> { Symbols.AAPL });
 
             var factory = new BaseDataCollectionSubscriptionEnumeratorFactory(null);
@@ -120,6 +118,41 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators.Factories
 
                 Assert.IsFalse(enumerator.MoveNext());
                 Assert.IsNotNull(enumerator.Current);
+            }
+        }
+
+        [Test]
+        public void ToleratesNullSource()
+        {
+            var config = new SubscriptionDataConfig(typeof(NullSourceCollectionData), Symbols.SPY, Resolution.Daily, TimeZones.NewYork, TimeZones.NewYork, false, false, false, true);
+            var security = new Security(
+                SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork),
+                config,
+                new Cash(Currencies.USD, 0, 1),
+                SymbolProperties.GetDefault(Currencies.USD),
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null,
+                new SecurityCache()
+            );
+
+            var factory = new BaseDataCollectionSubscriptionEnumeratorFactory(null);
+            var request = new SubscriptionRequest(false, null, security, config, new DateTime(2014, 3, 26), new DateTime(2014, 3, 27));
+
+            using (var enumerator = factory.CreateEnumerator(request, TestGlobals.DataProvider))
+            {
+                // a null source is skipped: no data is emitted for those dates and the enumerator just completes
+                Assert.DoesNotThrow(() =>
+                {
+                    Assert.IsFalse(enumerator.MoveNext());
+                });
+            }
+        }
+
+        private class NullSourceCollectionData : BaseDataCollection
+        {
+            public override SubscriptionDataSource GetSource(SubscriptionDataConfig config, DateTime date, bool isLiveMode)
+            {
+                return null;
             }
         }
     }
